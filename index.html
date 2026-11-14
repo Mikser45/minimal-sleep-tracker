@@ -1,0 +1,1946 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF">
+<title>Minimal Sleep Tracker</title>
+<style>
+/* =====================================================================
+   MINIMAL SLEEP TRACKER
+   Single-file, offline sleep tracker. All data lives in localStorage.
+
+   THEME COLORS
+   Change the palette here. ":root" is the Light theme,
+   [data-theme="dark"] is the Dark theme.
+   ===================================================================== */
+:root {
+  --bg: #FFFFFF;              /* page background */
+  --surface: #FFFFFF;         /* cards, sheet, tab bar */
+  --surface-2: #F2F4F8;       /* subtle fills: segmented controls, placeholders */
+  --surface-3: #E6EAF0;       /* inactive faces */
+  --border: #E2E7EE;          /* card borders, dividers */
+  --border-strong: #CBD3DE;   /* inputs, outline buttons */
+  --text: #141E30;            /* main text */
+  --text-2: #526077;          /* secondary text */
+  --text-3: #7A8599;          /* hints, axis labels */
+  --accent: #141E30;          /* buttons, active states, "goal met" bars (blue-black) */
+  --accent-hover: #26344D;
+  --accent-soft: #D3D8DF;     /* "below goal" bars (cool grey) */
+  --accent-tint: #F1F3F6;     /* banner, selected face, More details background */
+  --on-accent: #FFFFFF;       /* text on accent */
+  --focus-ring: rgba(20, 30, 48, .12); /* glow around focused inputs */
+  --danger: #B03A2E;          /* errors, destructive actions, overdue backup */
+  --danger-tint: #FBEDEB;
+  --on-danger: #FFFFFF;
+  --warning: #8A5A0B;         /* soft warnings (e.g. over 16 hours) */
+  --grid: #E9EDF2;            /* chart grid lines */
+  --row: #F4F6F9;             /* Sleep Timeline row background */
+  /* Sleep quality colors: 1 Very Poor ... 5 Excellent */
+  --q1: #C9705F;
+  --q2: #DB9A5E;
+  --q3: #D1B65C;
+  --q4: #82AD8E;
+  --q5: #4F8F7B;
+  --face-ink: #141E30;        /* eyes and mouth on faces */
+  /* Factor dot colors (History), in the order factors are listed */
+  --f1: #5B7FA8; --f2: #B0705F; --f3: #C29A45; --f4: #6E9C7E;
+  --f5: #8A6FA8; --f6: #4F9AA0; --f7: #B5728F; --f8: #7D8A9C;
+
+  --shadow: 0 1px 2px rgba(20, 30, 48, .04), 0 2px 10px rgba(20, 30, 48, .04);
+  --radius: 16px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+
+[data-theme="dark"] {
+  --bg: #141E30;
+  --surface: #1A2539;
+  --surface-2: #212E46;
+  --surface-3: #2B3A54;
+  --border: #2B3A55;
+  --border-strong: #3D4F6E;
+  --text: #EAF0F8;
+  --text-2: #B1BDD0;
+  --text-3: #8592A9;
+  --accent: #86A9D2;          /* #35577D lightened for contrast on navy */
+  --accent-hover: #9DBADD;
+  --accent-soft: #46628B;
+  --accent-tint: #22324D;
+  --on-accent: #0F1828;
+  --focus-ring: rgba(134, 169, 210, .25);
+  --danger: #F0907F;
+  --danger-tint: #3A2531;
+  --on-danger: #1A0F12;
+  --warning: #E9B860;
+  --grid: #27344C;
+  --row: #1F2A40;
+  --q1: #E08C7C;
+  --q2: #E8AE76;
+  --q3: #DCC77A;
+  --q4: #97C3A3;
+  --q5: #6FB39D;
+  --face-ink: #141E30;
+  --f1: #86A9D2; --f2: #E09C8C; --f3: #E2C277; --f4: #97C3A3;
+  --f5: #B6A0D4; --f6: #7CC3C8; --f7: #DDA0BB; --f8: #A9B5C7;
+  --shadow: none;
+  color-scheme: dark;
+}
+
+/* ===== Base ===== */
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+body.no-scroll { overflow: hidden; }
+#main { overflow-anchor: none; } /* views are re-rendered in place; the app restores scroll itself */
+[hidden] { display: none !important; }
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { margin: 0; }
+
+/* App column: phone-first, centered on wider screens */
+.app {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 16px calc(104px + env(safe-area-inset-bottom));
+}
+
+/* ===== Headers ===== */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 0 6px;
+}
+.app-title { font-size: 18px; font-weight: 650; letter-spacing: -.01em; }
+.page-head h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 20px 0 14px; }
+
+/* ===== Buttons ===== */
+.icon-btn {
+  width: 44px; height: 44px; border: 0; background: transparent;
+  border-radius: 12px; display: inline-grid; place-items: center;
+  color: var(--text-2); flex: none;
+}
+.icon-btn:hover { background: var(--surface-2); color: var(--text); }
+.icon-btn svg { width: 22px; height: 22px; }
+.icon-btn.sm { width: 36px; height: 36px; }
+.icon-btn.sm svg { width: 18px; height: 18px; }
+
+.btn {
+  min-height: 44px; padding: 0 18px; border-radius: 12px;
+  border: 1px solid var(--border-strong); background: var(--surface);
+  font-weight: 600; font-size: 15px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.btn:hover { background: var(--surface-2); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
+.btn-danger:hover { filter: brightness(.95); background: var(--danger); }
+.btn-danger-outline { color: var(--danger); border-color: var(--danger); background: transparent; }
+.btn-danger-outline:hover { background: var(--danger-tint); }
+.btn-xl { width: 100%; min-height: 56px; font-size: 17px; border-radius: 16px; }
+.btn-sm { min-height: 36px; padding: 0 12px; font-size: 14px; border-radius: 10px; }
+.btn-block { width: 100%; }
+.link-btn {
+  border: 0; background: none; padding: 6px 2px; color: var(--accent);
+  font-weight: 600; text-decoration: underline; text-underline-offset: 3px;
+}
+
+/* ===== Cards ===== */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow);
+  margin-bottom: 12px;
+}
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+.card h2 { font-size: 15px; font-weight: 650; }
+.card-sub { font-size: 13px; color: var(--text-3); }
+
+/* ===== Banners ===== */
+.banner {
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px;
+  background: var(--accent-tint); border: 1px solid var(--border);
+  border-radius: 14px; padding: 10px 10px 10px 14px; margin: 6px 0 8px; font-size: 14px; font-weight: 500;
+}
+.reminder {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  font-size: 14px; color: var(--text-2);
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 2px 2px 2px 12px; margin: 6px 0 8px;
+}
+.reminder .reminder-text { flex: 1; min-width: 0; }
+
+/* ===== Home ===== */
+.hero { text-align: center; padding: 28px 0 24px; }
+.hero-label { font-size: 14px; color: var(--text-2); font-weight: 500; }
+.hero-value {
+  font-size: 64px; font-weight: 700; letter-spacing: -.03em; line-height: 1.05;
+  margin: 6px 0 10px; font-variant-numeric: tabular-nums;
+}
+.hero-compare { font-size: 16px; color: var(--text-2); font-weight: 500; }
+.hero-compare.met { color: var(--accent); }
+.hero-meta { margin-top: 8px; font-size: 14px; color: var(--text-3); }
+.home-week { margin-top: 16px; }
+
+.empty-hero { text-align: center; padding: 48px 8px 8px; }
+.empty-icon {
+  width: 64px; height: 64px; margin: 0 auto 16px; border-radius: 50%;
+  background: var(--accent-tint); color: var(--accent); display: grid; place-items: center;
+}
+.empty-icon svg { width: 30px; height: 30px; }
+.empty-hero h2 { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.empty-hero p { color: var(--text-2); margin: 8px auto 24px; max-width: 320px; }
+
+/* ===== Segmented control ===== */
+.seg {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px;
+  background: var(--surface-2); border-radius: 12px; padding: 4px; margin-bottom: 12px;
+}
+.seg button {
+  border: 0; background: none; min-height: 40px; border-radius: 9px;
+  font-weight: 600; font-size: 14px; color: var(--text-2); padding: 0 10px;
+}
+.seg button:hover { color: var(--text); }
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(20, 30, 48, .1); }
+[data-theme="dark"] .seg button.on { background: var(--surface-3); }
+.seg.inline { display: inline-grid; margin: 0; }
+
+/* ===== KPIs ===== */
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+.kpi { margin: 0; }
+.kpi-label { font-size: 13px; color: var(--text-2); font-weight: 600; }
+.kpi-value {
+  font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin-top: 4px;
+  font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 8px; line-height: 1.2;
+}
+.kpi-value.small { font-size: 20px; }
+.kpi-sub { font-size: 12.5px; color: var(--text-3); margin-top: 2px; }
+
+/* ===== Charts ===== */
+.chart { width: 100%; }
+.chart svg { display: block; overflow: visible; }
+.chart text { font-size: 10.5px; fill: var(--text-3); font-family: var(--font); }
+.chart text.val { fill: var(--text-2); font-weight: 600; stroke: var(--surface); stroke-width: 3px; paint-order: stroke; stroke-linejoin: round; }
+.chart text.goal-label { fill: var(--text-2); font-weight: 600; }
+.chart text.tl-today { fill: var(--accent); font-weight: 700; }
+.chart.timeline text { font-size: 9.5px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12.5px; color: var(--text-3); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.sw-dash { width: 16px; height: 0; border-top: 2px dashed var(--text-2); display: inline-block; }
+.placeholder {
+  padding: 28px 12px; text-align: center; color: var(--text-3); font-size: 14px;
+  background: var(--surface-2); border-radius: 12px;
+}
+
+.month-switch { display: flex; align-items: center; gap: 2px; }
+.month-switch strong { font-size: 14px; font-weight: 600; min-width: 74px; text-align: center; }
+.month-switch .icon-btn:disabled { opacity: .3; cursor: default; background: none; }
+.tl-empty { font-size: 13px; color: var(--text-3); margin: 8px 0 0; text-align: center; }
+
+.stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.stat-value { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.stat-label { font-size: 12.5px; color: var(--text-3); margin-top: 2px; }
+
+/* Quality breakdown bar */
+.qbar { display: flex; height: 28px; border-radius: 8px; overflow: hidden; gap: 2px; }
+.qbar span { display: block; height: 100%; min-width: 3px; }
+.qlegend { display: grid; grid-template-columns: 1fr; gap: 8px 16px; margin: 14px 0 0; padding: 0; list-style: none; }
+.qlegend li { display: flex; align-items: center; gap: 8px; font-size: 13.5px; }
+.qlegend .qcount { white-space: nowrap; margin-left: auto; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.qlegend svg { width: 18px; height: 18px; flex: none; }
+
+/* Factors (Patterns) */
+.frow { padding: 12px 0; border-top: 1px solid var(--border); }
+.frow:first-of-type { border-top: 0; padding-top: 2px; }
+.frow-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 600; font-size: 14.5px; }
+.fdiff { color: var(--text-2); font-weight: 600; font-size: 13px; white-space: nowrap; }
+.fbar { display: grid; grid-template-columns: 58px 1fr 58px; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); margin-top: 7px; }
+.fbar b { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+.ftrack { height: 10px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+.ftrack i { display: block; height: 100%; background: var(--accent); border-radius: 6px; }
+.ftrack.without i { background: var(--accent-soft); }
+.fnote { font-size: 12.5px; color: var(--text-3); margin: 6px 0 0; }
+
+/* ===== History ===== */
+.hist-meta { color: var(--text-3); font-size: 14px; margin: -8px 0 12px; }
+.factor-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--text-2); margin-bottom: 4px; }
+.factor-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.month-group h2 {
+  font-size: 12.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-3);
+  font-weight: 700; margin: 20px 4px 8px;
+}
+.hist-list {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; box-shadow: var(--shadow);
+}
+.hist-row {
+  display: grid; grid-template-columns: 1fr auto 28px; align-items: center; gap: 12px;
+  width: 100%; text-align: left; padding: 12px 14px; border: 0; background: none;
+  border-top: 1px solid var(--border); min-height: 64px;
+}
+.hist-row:first-child { border-top: 0; }
+.hist-row:hover { background: var(--surface-2); }
+.hist-date { font-weight: 600; font-size: 15px; }
+.hist-times { font-size: 13px; color: var(--text-3); margin-top: 1px; }
+.hist-dur { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.hist-row svg.face { width: 26px; height: 26px; }
+.dots { display: flex; gap: 4px; margin-top: 5px; }
+.fdot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+
+/* ===== Forms ===== */
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field > span, .block-label { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.input {
+  min-height: 48px; border: 1px solid var(--border-strong); border-radius: 12px;
+  background: var(--surface); padding: 0 12px; width: 100%; font-size: 16px; min-width: 0;
+}
+.input:hover { border-color: var(--text-3); }
+.input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus-ring); }
+.input.invalid { border-color: var(--danger); }
+input[type="time"].input, input[type="date"].input { -webkit-appearance: none; appearance: none; display: block; text-align: left; }
+input[type="time"]::-webkit-date-and-time-value, input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+textarea.input { padding: 12px; min-height: 84px; resize: vertical; line-height: 1.4; }
+.err { color: var(--danger); font-size: 13px; font-weight: 500; }
+.err:empty { display: none; }
+.warn { color: var(--warning); font-size: 13.5px; font-weight: 500; text-align: center; }
+.warn:empty { display: none; }
+.hint { font-size: 13px; color: var(--text-3); margin: 0; }
+.opt { font-weight: 500; color: var(--text-3); font-size: 12px; margin-left: 4px; }
+
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; flex: none; }
+.stepper button { width: 46px; height: 46px; border: 0; background: var(--surface-2); font-size: 22px; line-height: 1; color: var(--text); }
+.stepper button:hover { background: var(--surface-3); }
+.stepper button:disabled { opacity: .35; cursor: default; }
+.stepper output { min-width: 80px; text-align: center; font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+.stepper output.muted { color: var(--text-3); }
+
+/* ===== Bottom tab bar ===== */
+.tabbar {
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 560px; z-index: 20;
+  background: var(--surface); border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+}
+.tab {
+  border: 0; background: none; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; min-height: 54px; color: var(--text-3); font-size: 11px; font-weight: 600; border-radius: 12px;
+}
+.tab:hover { color: var(--text); }
+.tab svg { width: 24px; height: 24px; }
+.tab.active { color: var(--accent); }
+.tab-plus .plus {
+  width: 54px; height: 54px; border-radius: 50%; background: var(--accent); color: var(--on-accent);
+  display: grid; place-items: center; margin-top: -20px; box-shadow: 0 4px 14px rgba(20, 30, 48, .18);
+  transition: background .15s;
+}
+.tab-plus:hover .plus { background: var(--accent-hover); }
+.tab-plus .plus svg { width: 26px; height: 26px; }
+
+.more-menu {
+  position: fixed; z-index: 25;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  right: max(12px, calc(50% - 268px));
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(10, 16, 28, .16); padding: 6px; min-width: 190px;
+}
+.more-menu button {
+  display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none;
+  padding: 0 12px; min-height: 48px; border-radius: 10px; font-weight: 600; font-size: 15px; text-align: left;
+}
+.more-menu button:hover { background: var(--surface-2); }
+.more-menu button.active { color: var(--accent); }
+.more-menu svg { width: 20px; height: 20px; color: var(--text-2); }
+
+/* ===== Bottom sheet (Log Sleep) ===== */
+.sheet-wrap { position: fixed; inset: 0; z-index: 40; }
+.sheet-backdrop { position: absolute; inset: 0; background: rgba(10, 16, 28, .38); opacity: 0; transition: opacity .22s; }
+.sheet {
+  position: absolute; left: 50%; bottom: 0; transform: translate(-50%, 100%);
+  width: 100%; max-width: 560px; max-height: 92vh; max-height: 92dvh; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface); border-radius: 22px 22px 0 0;
+  padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
+  transition: transform .26s cubic-bezier(.2, .8, .2, 1);
+}
+.sheet:focus { outline: none; }
+.sheet-wrap.open .sheet-backdrop { opacity: 1; }
+.sheet-wrap.open .sheet { transform: translate(-50%, 0); }
+.sheet-grip { width: 40px; height: 5px; border-radius: 3px; background: var(--border-strong); margin: 2px auto 10px; }
+.sheet-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 14px; }
+.sheet-head h2 { font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+.night-of {
+  border: 0; background: none; padding: 4px 0; margin-top: 2px; color: var(--text-2);
+  font-size: 15px; font-weight: 500; display: inline-flex; align-items: center; gap: 4px;
+}
+.night-of:hover { color: var(--text); }
+.night-of svg { width: 16px; height: 16px; transition: transform .15s; }
+.night-of[aria-expanded="true"] svg { transform: rotate(180deg); }
+.date-field { margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
+.time-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.duration { text-align: center; margin: 14px 0 4px; }
+.duration-label { display: block; font-size: 12.5px; color: var(--text-3); font-weight: 600; }
+.duration strong { font-size: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.field-block { margin-top: 16px; }
+.field-block .block-label { margin-bottom: 8px; display: block; }
+.qrow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.qbtn {
+  border: 1px solid transparent; background: none; border-radius: 14px; padding: 8px 0 6px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  font-size: 11.5px; line-height: 1.15; color: var(--text-3); font-weight: 600; min-width: 0;
+}
+.qbtn:hover { background: var(--surface-2); }
+.qbtn svg { width: 42px; height: 42px; }
+.qbtn.on { background: var(--accent-tint); border-color: var(--accent); color: var(--text); }
+.qbtn:not(.on) .face-bg { fill: var(--surface-3); }
+.qbtn:not(.on) .face-eye { fill: var(--text-3); }
+.qbtn:not(.on) .face-mouth { stroke: var(--text-3); }
+/* "More details": a visible row that opens the optional fields */
+.details-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  margin-top: 18px; padding: 10px 14px; min-height: 60px;
+  border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-2);
+  color: var(--text); text-align: left; transition: background .15s, border-color .15s;
+}
+.details-toggle:hover { border-color: var(--accent); background: var(--accent-tint); }
+.details-toggle[aria-expanded="true"] { border-radius: 14px 14px 0 0; border-bottom-color: transparent; background: var(--accent-tint); }
+.details-title { display: block; font-weight: 650; font-size: 15.5px; }
+.details-sub { display: block; font-size: 13px; color: var(--text-2); margin-top: 1px; }
+.details-count { color: var(--accent); font-weight: 600; }
+.details-chev {
+  width: 32px; height: 32px; flex: none; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface); color: var(--accent); border: 1px solid var(--border);
+}
+.details-chev svg { width: 18px; height: 18px; transition: transform .15s; }
+.details-toggle[aria-expanded="true"] .details-chev svg { transform: rotate(180deg); }
+.details {
+  display: flex; flex-direction: column; gap: 16px; padding: 14px 14px 16px;
+  border: 1px solid var(--border-strong); border-top: 0; border-radius: 0 0 14px 14px;
+}
+.row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--border-strong);
+  background: var(--surface); font-size: 14px; font-weight: 600; color: var(--text-2);
+}
+.chip:hover { border-color: var(--text-3); color: var(--text); }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.sheet-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+
+/* ===== Settings ===== */
+.sec-title { font-size: 15px; font-weight: 650; margin-bottom: 4px; }
+.setting { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 12px 0; border-top: 1px solid var(--border); }
+.card > .setting:first-of-type { border-top: 0; padding-top: 6px; }
+.setting-label { font-weight: 600; font-size: 15px; }
+.setting-hint { font-size: 13px; color: var(--text-3); margin: 2px 0 0; }
+.inline-row { display: flex; align-items: center; gap: 10px; }
+.input-time { width: 150px; }
+.factor-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.factor-list li { display: grid; grid-template-columns: 10px 1fr 44px; align-items: center; gap: 4px 10px; }
+.factor-list li .err { grid-column: 2 / 4; }
+.factor-add { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 12px; }
+#ferr-new { margin-top: 6px; }
+.data-warning { font-size: 14px; color: var(--text-2); margin: 0 0 14px; line-height: 1.5; }
+.data-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 12px; }
+.backup-status { font-size: 16px; font-weight: 700; }
+.backup-status.overdue { color: var(--danger); }
+.divider { border: 0; border-top: 1px solid var(--border); margin: 18px 0 14px; }
+.erase-text { font-size: 13.5px; color: var(--text-2); margin: 0 0 10px; }
+.version-note { text-align: center; color: var(--text-3); font-size: 12.5px; margin: 16px 0 0; }
+
+/* ===== Guide ===== */
+.guide h2 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+.guide h3 { font-size: 14.5px; font-weight: 650; margin: 14px 0 4px; }
+.guide p, .guide li { color: var(--text-2); font-size: 15px; line-height: 1.55; }
+.guide p { margin: 0 0 10px; }
+.guide ul, .guide ol { margin: 0 0 10px; padding-left: 20px; }
+.guide li { margin-bottom: 4px; }
+.guide strong { color: var(--text); font-weight: 600; }
+.note-box { background: var(--surface-2); border-radius: 12px; padding: 12px 14px; font-size: 14px; color: var(--text-2); margin-top: 8px; }
+
+/* ===== Onboarding (after Clear Demo Data / Erase) ===== */
+.onboard { text-align: center; padding: 56px 4px 24px; max-width: 420px; margin: 0 auto; }
+.onboard h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
+.onboard > p { color: var(--text-2); margin: 10px 0 28px; }
+.onboard .stepper { margin-bottom: 28px; }
+.onboard .stepper button { width: 56px; height: 56px; }
+.onboard .stepper output { min-width: 110px; font-size: 22px; }
+.onboard .field { text-align: left; margin-bottom: 6px; }
+.onboard .hint { text-align: left; margin-bottom: 28px; }
+
+/* ===== Dialog ===== */
+.dialog-wrap { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; }
+.dialog-backdrop { position: absolute; inset: 0; background: rgba(10, 16, 28, .45); }
+.dialog {
+  position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  padding: 20px; width: 100%; max-width: 400px; box-shadow: 0 16px 40px rgba(10, 16, 28, .25);
+}
+.dialog h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.dialog p { color: var(--text-2); margin: 0 0 18px; font-size: 15px; }
+.dialog-actions { display: flex; flex-wrap: wrap-reverse; justify-content: flex-end; gap: 8px; }
+.dialog-actions .btn { flex: 1 1 auto; }
+
+/* ===== Toast ===== */
+.toast {
+  position: fixed; left: 50%; bottom: calc(88px + env(safe-area-inset-bottom)); z-index: 70;
+  transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px;
+  font-size: 14px; font-weight: 500; max-width: calc(100% - 32px); text-align: center;
+  transition: opacity .2s, transform .2s;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ===== Small phones ===== */
+@media (max-width: 380px) {
+  .hero-value { font-size: 56px; }
+  .kpi-value { font-size: 23px; }
+  .qbtn { font-size: 10.5px; }
+  .qbtn svg { width: 38px; height: 38px; }
+}
+/* ===== Wider screens: same centered column, a little more air ===== */
+@media (min-width: 600px) {
+  .tabbar { border-left: 1px solid var(--border); border-right: 1px solid var(--border); border-radius: 18px 18px 0 0; }
+  .page-head h1 { margin-top: 28px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <main id="main"></main>
+</div>
+
+<!-- Bottom navigation -->
+<nav class="tabbar" id="tabbar" aria-label="Main">
+  <button class="tab" data-action="go" data-view="home" data-tab="home"><span data-icon="home"></span>Home</button>
+  <button class="tab" data-action="go" data-view="trends" data-tab="trends"><span data-icon="trends"></span>Trends</button>
+  <button class="tab tab-plus" data-action="log" aria-label="Log Sleep"><span class="plus" data-icon="plus"></span></button>
+  <button class="tab" data-action="go" data-view="patterns" data-tab="patterns"><span data-icon="patterns"></span>Patterns</button>
+  <button class="tab" data-action="more" data-tab="more" aria-haspopup="true" aria-expanded="false" id="more-btn"><span data-icon="more"></span>More</button>
+</nav>
+
+<!-- "More" menu -->
+<div class="more-menu" id="more-menu" role="menu" hidden>
+  <button role="menuitem" data-action="go" data-view="history"><span data-icon="history"></span>History</button>
+  <button role="menuitem" data-action="go" data-view="settings"><span data-icon="gear"></span>Settings</button>
+  <button role="menuitem" data-action="go" data-view="guide"><span data-icon="guide"></span>Guide</button>
+</div>
+
+<div id="sheet-root"></div>
+<div id="dialog-root"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<input type="file" id="import-file" accept="application/json,.json" hidden>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ===================================================================
+     CONSTANTS
+     =================================================================== */
+  const STORE_KEY = 'minimalSleepTracker.v1';   // localStorage key
+  const APP_ID = 'minimal-sleep-tracker';       // written into backup files
+  const MAX_FACTORS = 8;
+  const FACTOR_NAME_MAX = 24;
+  const NOTE_MAX = 280;
+  const AWOKEN_MAX = 20;
+  const GOAL_MIN = 240, GOAL_MAX = 720, GOAL_STEP = 15; // minutes
+  const DEFAULT_BEDTIME = '22:30';  // used when there are no entries and no Target Bedtime
+  const LONG_SLEEP = 16 * 60;       // warn above this
+  const MIN_NIGHTS = 3;             // charts need at least this many nights
+  const BACKUP_DAYS = 14;           // backup reminder / overdue threshold
+  const BACKUP_NIGHTS = 7;          // new nights needed for the Home reminder
+
+  const QUALITY = ['', 'Very Poor', 'Poor', 'Fair', 'Good', 'Excellent'];
+  const DEFAULT_FACTORS = [
+    { id: 'f_caffeine', name: 'Caffeine' },
+    { id: 'f_alcohol', name: 'Alcohol' },
+    { id: 'f_late_meal', name: 'Late Meal' },
+    { id: 'f_screens', name: 'Screens' },
+    { id: 'f_stress', name: 'Stress' }
+  ];
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+  const STORAGE_WARNING = 'Your data is saved only in this browser on this device \u2014 nothing is uploaded anywhere. Browsers can clear this storage: for example when you clear browsing data, use private mode, or in Safari, which may delete it after about 7 days of not opening the tracker. A backup file is the copy that survives, so export one after setup and regularly after that.';
+  const MOVE_NOTE = 'To move your data to another device, export a backup and open it there with Import JSON.';
+
+  /* ===================================================================
+     ICONS (inline SVG, stroke = currentColor)
+     =================================================================== */
+  const svgI = (d, extra) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"' + (extra || '') + '>' + d + '</svg>';
+  const ICON = {
+    home: svgI('<path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/>'),
+    trends: svgI('<path d="M5 20v-8M10 20V5M15 20v-6M20 20V9"/>'),
+    patterns: svgI('<path d="M4 6h9M8 10h12M5 14h10M9 18h11"/>'),
+    more: svgI('<circle cx="5.5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="18.5" cy="12" r="1.3" fill="currentColor"/>'),
+    plus: svgI('<path d="M12 5v14M5 12h14"/>', ' stroke-width="2.2"'),
+    history: svgI('<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r=".9" fill="currentColor"/><circle cx="4" cy="12" r=".9" fill="currentColor"/><circle cx="4" cy="18" r=".9" fill="currentColor"/>'),
+    gear: svgI('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
+    guide: svgI('<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/>'),
+    x: svgI('<path d="M6 6l12 12M18 6 6 18"/>'),
+    trash: svgI('<path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l.8 12.5h9.4L17.5 7"/>'),
+    chevDown: svgI('<path d="m6 9 6 6 6-6"/>'),
+    chevLeft: svgI('<path d="m15 6-6 6 6 6"/>'),
+    chevRight: svgI('<path d="m9 6 6 6-6 6"/>'),
+    moon: svgI('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>')
+  };
+
+  /* ===================================================================
+     SMALL HELPERS
+     =================================================================== */
+  const $ = (sel) => document.querySelector(sel);
+  const pad = (n) => String(n).padStart(2, '0');
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const sum = (arr) => arr.reduce((s, v) => s + v, 0);
+  const avg = (arr) => arr.length ? sum(arr) / arr.length : 0;
+  const uid = (p) => p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+  /** Escape user text before inserting it into HTML. */
+  function esc(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /* ----- Dates are stored as local "YYYY-MM-DD" strings ----- */
+  function toKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function fromKey(k) { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); }
+  function todayKey() { return toKey(new Date()); }
+  function addDays(k, n) { const d = fromKey(k); d.setDate(d.getDate() + n); return toKey(d); }
+  function daysBetween(a, b) { return Math.round((fromKey(b) - fromKey(a)) / 864e5); }
+  function fmtDate(k) { const d = fromKey(k); return MON[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear(); } // Oct 27, 2026
+  function fmtShort(k) { const d = fromKey(k); return MON[d.getMonth()] + ' ' + d.getDate(); }                   // Oct 27
+  /** "Oct 27–28" or "Sep 30–Oct 1": the evening and the morning of a night. */
+  function nightRange(k) {
+    const a = fromKey(addDays(k, -1)), b = fromKey(k);
+    return a.getMonth() === b.getMonth()
+      ? MON[a.getMonth()] + ' ' + a.getDate() + '\u2013' + b.getDate()
+      : MON[a.getMonth()] + ' ' + a.getDate() + '\u2013' + MON[b.getMonth()] + ' ' + b.getDate();
+  }
+  function validISO(v) { return typeof v === 'string' && !isNaN(Date.parse(v)) ? v : null; }
+
+  /* ----- Times are stored as "HH:MM" (24h) ----- */
+  function toMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+  function minToHHMM(m) { m = ((Math.round(m) % 1440) + 1440) % 1440; return pad(Math.floor(m / 60)) + ':' + pad(m % 60); }
+  /** Format "HH:MM" using the Time Format setting. */
+  function fmtTime(t) {
+    if (!TIME_RE.test(t || '')) return '\u2014';
+    if (state.settings.timeFormat === '24h') return t;
+    const [h, m] = t.split(':').map(Number);
+    return (h % 12 || 12) + ':' + pad(m) + ' ' + (h < 12 ? 'AM' : 'PM');
+  }
+  /** Hour label for chart axes. */
+  function hourLabel(h) {
+    if (state.settings.timeFormat === '24h') return String(h);
+    if (h === 0) return '12 AM';
+    if (h === 12) return '12 PM';
+    return h < 12 ? h + ' AM' : (h - 12) + ' PM';
+  }
+
+  /* ----- Durations are minutes ----- */
+  function fmtDur(m) {
+    m = Math.round(m);
+    const h = Math.floor(m / 60), mm = m % 60;
+    if (h && mm) return h + 'h ' + mm + 'm';
+    if (h) return h + 'h';
+    return mm + 'm';
+  }
+  /** Gap used in sentences: "15 min" or "1h 15m". */
+  function fmtGap(m) { m = Math.round(m); return m < 60 ? m + ' min' : fmtDur(m); }
+  /** Wake Time − Bedtime; if ≤ 0, the night crossed midnight, so add 24h. */
+  function calcDur(bed, wake) {
+    if (!TIME_RE.test(bed || '') || !TIME_RE.test(wake || '')) return null;
+    let d = toMin(wake) - toMin(bed);
+    if (d <= 0) d += 1440;
+    return d;
+  }
+  const sleptMin = (n) => calcDur(n.bedtime, n.wakeTime);
+  const weekStartIdx = () => state.settings.weekStartsOn === 'monday' ? 1 : 0;
+  const factorColor = (i) => 'var(--f' + ((i % 8) + 1) + ')';
+
+  /* ===================================================================
+     QUALITY FACES (drawn in SVG, no emoji)
+     =================================================================== */
+  // Mouth shape per level: [start/end y, control point y]
+  const MOUTH = { 1: [18.6, 13.4], 2: [18, 15.4], 3: [17, 17], 4: [16, 19.2], 5: [15.4, 21.6] };
+  function faceInner(q) {
+    const [y0, cy] = MOUTH[q] || MOUTH[3];
+    return '<circle class="face-bg" cx="13" cy="13" r="12" fill="var(--q' + q + ')"/>' +
+      '<circle class="face-eye" cx="9" cy="10.4" r="1.45" fill="var(--face-ink)"/>' +
+      '<circle class="face-eye" cx="17" cy="10.4" r="1.45" fill="var(--face-ink)"/>' +
+      '<path class="face-mouth" d="M8.4 ' + y0 + ' Q13 ' + cy + ' 17.6 ' + y0 + '" fill="none" stroke="var(--face-ink)" stroke-width="1.8" stroke-linecap="round"/>';
+  }
+  function faceSVG(q, size) {
+    return '<svg class="face" viewBox="0 0 26 26" width="' + size + '" height="' + size + '" aria-hidden="true">' + faceInner(q) + '</svg>';
+  }
+  /** Face placed inside a larger chart SVG. */
+  function faceGroup(q, x, y, size) {
+    return '<g transform="translate(' + x.toFixed(1) + ' ' + y.toFixed(1) + ') scale(' + (size / 26).toFixed(3) + ')">' + faceInner(q) + '</g>';
+  }
+
+  /* ===================================================================
+     STATE & STORAGE
+     state = { nights: [], factors: [], settings: {} }
+     =================================================================== */
+  let state = null;
+  const ui = { view: 'home', trendsPeriod: 7, patternsPeriod: 28, tlMonth: null, obGoal: 480, moreOpen: false };
+  let sheet = null;       // Log Sleep form state while the sheet is open
+  let chartQueue = [];    // chart renderers for the current view
+
+  function defaultSettings() {
+    return {
+      sleepGoal: 480,
+      targetBedtime: '',
+      theme: 'light',
+      timeFormat: '12h',
+      weekStartsOn: 'sunday',
+      lastBackup: null,
+      demoMode: false,
+      backupReminderDismissedAt: null,
+      onboarding: false,            // true = show "What's your sleep goal?" screen
+      startedAt: new Date().toISOString()
+    };
+  }
+
+  function normSettings(ps) {
+    const s = defaultSettings();
+    ps = ps && typeof ps === 'object' ? ps : {};
+    const g = Number(ps.sleepGoal);
+    if (isFinite(g) && g > 0) s.sleepGoal = clamp(Math.round(g / GOAL_STEP) * GOAL_STEP, GOAL_MIN, GOAL_MAX);
+    s.targetBedtime = TIME_RE.test(ps.targetBedtime || '') ? ps.targetBedtime : '';
+    s.theme = ps.theme === 'dark' ? 'dark' : 'light';
+    s.timeFormat = ps.timeFormat === '24h' ? '24h' : '12h';
+    s.weekStartsOn = ps.weekStartsOn === 'monday' ? 'monday' : 'sunday';
+    s.lastBackup = validISO(ps.lastBackup);
+    s.backupReminderDismissedAt = validISO(ps.backupReminderDismissedAt);
+    s.startedAt = validISO(ps.startedAt) || s.startedAt;
+    s.demoMode = ps.demoMode === true;
+    s.onboarding = ps.onboarding === true;
+    return s;
+  }
+
+  /**
+   * Validate and clean data from storage or a backup file.
+   * Accepts a backup wrapper ({ app, data: {...} }) or the raw data object.
+   * Returns null if the structure is not a valid tracker file.
+   */
+  function normalize(p) {
+    if (!p || typeof p !== 'object') return null;
+    if (p.app && p.app !== APP_ID) return null;
+    const d = p.data && typeof p.data === 'object' ? p.data : p;
+    if (!Array.isArray(d.nights) || !Array.isArray(d.factors)) return null;
+
+    const factors = [], ids = new Set(), names = new Set();
+    for (const f of d.factors) {
+      if (!f || typeof f.id !== 'string' || typeof f.name !== 'string') return null;
+      const name = f.name.trim().slice(0, FACTOR_NAME_MAX);
+      if (!name || ids.has(f.id) || names.has(name.toLowerCase())) continue;
+      ids.add(f.id); names.add(name.toLowerCase());
+      factors.push({ id: f.id, name });
+      if (factors.length >= MAX_FACTORS) break;
+    }
+
+    const nights = [], dates = new Set();
+    for (const n of d.nights) {
+      if (!n || !DATE_RE.test(n.date) || !TIME_RE.test(n.bedtime) || !TIME_RE.test(n.wakeTime)) return null;
+      const q = Number(n.quality);
+      if (!Number.isInteger(q) || q < 1 || q > 5) return null;
+      if (dates.has(n.date)) continue; // one entry per date
+      dates.add(n.date);
+      const aw = Number(n.timesAwoken);
+      nights.push({
+        id: typeof n.id === 'string' && n.id ? n.id : uid('n'),
+        date: n.date,
+        bedtime: n.bedtime,
+        wakeTime: n.wakeTime,
+        quality: q,
+        timesAwoken: n.timesAwoken != null && Number.isInteger(aw) && aw >= 0 ? Math.min(aw, AWOKEN_MAX) : null,
+        factors: Array.isArray(n.factors) ? [...new Set(n.factors.filter((id) => ids.has(id)))] : [],
+        note: typeof n.note === 'string' ? n.note.slice(0, NOTE_MAX) : '',
+        demo: n.demo === true,
+        created: validISO(n.created) || new Date().toISOString()
+      });
+    }
+    return { nights, factors, settings: normSettings(d.settings) };
+  }
+
+  function serialize() {
+    return {
+      nights: state.nights.map((n) => Object.assign({}, n, { factors: n.factors.slice() })),
+      factors: state.factors.map((f) => Object.assign({}, f)),
+      settings: Object.assign({}, state.settings)
+    };
+  }
+
+  let storageWarned = false;
+  /** Save to localStorage. Never throws; warns once if the browser blocks storage. */
+  function persist() {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(serialize()));
+      return true;
+    } catch (e) {
+      if (!storageWarned) {
+        storageWarned = true;
+        toast("Couldn't save in this browser. Export a backup to keep your data.");
+      }
+      return false;
+    }
+  }
+
+  function loadState() {
+    let raw = null;
+    try { raw = localStorage.getItem(STORE_KEY); } catch (e) { /* storage blocked */ }
+    if (raw) {
+      try {
+        const n = normalize(JSON.parse(raw));
+        if (n) return n;
+      } catch (e) { /* fall through */ }
+      // Keep a copy of unreadable data instead of silently overwriting it.
+      try { localStorage.setItem(STORE_KEY + '.unreadable-' + Date.now(), raw); } catch (e) { /* ignore */ }
+    }
+    return demoState();
+  }
+
+  function demoState() {
+    return {
+      nights: makeDemoNights(),
+      factors: DEFAULT_FACTORS.map((f) => Object.assign({}, f)),
+      settings: Object.assign(defaultSettings(), { demoMode: true })
+    };
+  }
+
+  /* ===================================================================
+     DEMO DATA
+     About 60 nights ending today, generated with a fixed seed so it looks
+     the same every time. Dates are relative to today so every chart is
+     filled whenever the file is first opened.
+     =================================================================== */
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function makeDemoNights() {
+    const r = mulberry32(20261028), t = todayKey(), out = [];
+    const skip = new Set([12, 29, 44]); // a few nights not logged, like real life
+    const notes = { 3: 'Late work call', 9: 'Fell asleep on the couch first', 17: 'Neighbors were loud', 26: 'Evening run', 41: 'Travel day' };
+    const createdBase = Date.now() - 61 * 864e5;
+    for (let ago = 61; ago >= 0; ago--) {
+      if (skip.has(ago)) continue;
+      const date = addDays(t, -ago);
+      const wd = fromKey(date).getDay();
+      const weekend = wd === 0 || wd === 6;               // woke up on Sat or Sun
+      let bed = weekend ? 23 * 60 + 15 + r() * 75 : 22 * 60 + 20 + r() * 60; // may pass midnight
+      let wake = weekend ? 7 * 60 + 50 + r() * 70 : 6 * 60 + 25 + r() * 40;
+      let awoken = r() < 0.5 ? 0 : (r() < 0.75 ? 1 : 2);
+      const f = [];
+      if (r() < 0.22) { f.push('f_caffeine'); bed += 40; }                       // ~40 min shorter
+      if (r() < (weekend ? 0.35 : 0.07)) { f.push('f_alcohol'); wake -= 15; awoken += 2; }
+      if (r() < 0.15) { f.push('f_late_meal'); bed += 15; awoken += 1; }
+      if (r() < 0.3) { f.push('f_screens'); bed += 20; }
+      if (!weekend && r() < 0.2) { f.push('f_stress'); bed += 25; wake -= 10; awoken += 1; }
+      if (r() < 0.06) bed += 80;                                                  // an occasional short night
+      bed = Math.round(bed / 5) * 5;
+      wake = Math.round(wake / 5) * 5;
+      const dur = wake + 1440 - bed;
+      // Quality follows duration, nudged by alcohol, awakenings and chance
+      let q = dur < 360 ? 1 : dur < 405 ? 2 : dur < 450 ? 3 : dur < 490 ? 4 : 5;
+      if (f.includes('f_alcohol')) q--;
+      if (awoken >= 3) q--;
+      const x = r();
+      if (x < 0.12) q--; else if (x > 0.9) q++;
+      out.push({
+        id: 'n_demo_' + ago, date,
+        bedtime: minToHHMM(bed), wakeTime: minToHHMM(wake),
+        quality: clamp(q, 1, 5), timesAwoken: awoken, factors: f,
+        note: notes[ago] || '', demo: true,
+        created: new Date(createdBase + (61 - ago) * 864e5).toISOString()
+      });
+    }
+    return out;
+  }
+
+  /* ===================================================================
+     DATA QUERIES
+     =================================================================== */
+  const sortedDesc = () => state.nights.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const nightByDate = (d) => state.nights.find((n) => n.date === d);
+  /** Nights in the last N days including today. */
+  function periodNights(days) {
+    const t = todayKey(), from = addDays(t, -(days - 1));
+    return state.nights.filter((n) => n.date >= from && n.date <= t);
+  }
+
+  /** Bedtime and Wake Time to pre-fill a new entry. */
+  function autofill() {
+    const last = sortedDesc()[0];
+    if (last) return { bed: last.bedtime, wake: last.wakeTime };
+    const bed = state.settings.targetBedtime || DEFAULT_BEDTIME;
+    return { bed, wake: minToHHMM(toMin(bed) + state.settings.sleepGoal) };
+  }
+
+  /** Home reminder: 14+ days since the last backup (or dismissal) and 7+ new nights since then. */
+  function showBackupReminder() {
+    const s = state.settings;
+    if (s.demoMode) return false;
+    const refs = [s.lastBackup, s.backupReminderDismissedAt, s.startedAt].map((v) => Date.parse(v)).filter((v) => !isNaN(v));
+    const ref = refs.length ? Math.max(...refs) : 0;
+    if (Date.now() - ref < BACKUP_DAYS * 864e5) return false;
+    return state.nights.filter((n) => Date.parse(n.created) > ref).length >= BACKUP_NIGHTS;
+  }
+
+  /* ===================================================================
+     CHARTS (pure SVG strings; width is measured from the container)
+     =================================================================== */
+
+  /**
+   * Vertical bar chart for durations.
+   * o.items: [{ label, value (min or null), title, face }]
+   * o.goal: minutes (dashed line + "met" coloring)
+   */
+  function barChart(o, W) {
+    const H = o.height || 190;
+    const padL = o.compact ? 4 : 30, padR = o.compact ? 4 : 8;
+    const padT = o.showValues ? 22 : 14, padB = o.faceLabels ? 32 : 22;
+    const vals = o.items.map((i) => i.value).filter((v) => v != null);
+    const maxV = Math.max(o.goal || 0, ...vals, 60);
+    const maxH = Math.max(2, Math.ceil((maxV + 20) / 120) * 2); // round up to an even hour, with headroom
+    const top = maxH * 60, ch = H - padT - padB;
+    const y = (v) => padT + ch * (1 - v / top);
+    let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + esc(o.aria || 'Chart') + '">';
+
+    // Grid + y labels
+    if (!o.compact) {
+      const step = maxH <= 10 ? 2 : 4;
+      for (let h = 0; h <= maxH; h += step) {
+        const yy = y(h * 60).toFixed(1);
+        s += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + yy + '" y2="' + yy + '" stroke="var(--grid)" stroke-width="1"/>';
+        s += '<text x="' + (padL - 6) + '" y="' + (+yy + 3.5) + '" text-anchor="end">' + h + 'h</text>';
+      }
+    } else {
+      s += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + (padT + ch) + '" y2="' + (padT + ch) + '" stroke="var(--grid)" stroke-width="1"/>';
+    }
+
+    // Bars
+    const n = o.items.length, slot = (W - padL - padR) / n;
+    const bw = Math.max(3, Math.min(slot * 0.62, o.compact ? 24 : 28));
+    o.items.forEach((it, i) => {
+      const cx = padL + slot * (i + 0.5);
+      if (it.value != null) {
+        const hgt = Math.max(3, padT + ch - y(it.value));
+        const met = o.goal ? it.value >= o.goal : true;
+        s += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (padT + ch - hgt).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + hgt.toFixed(1) + '" rx="' + Math.min(4, bw / 2).toFixed(1) + '" fill="' + (met ? 'var(--accent)' : 'var(--accent-soft)') + '"><title>' + esc(it.title || '') + '</title></rect>';
+        if (o.showValues) s += '<text class="val" x="' + cx.toFixed(1) + '" y="' + (padT + ch - hgt - 6).toFixed(1) + '" text-anchor="middle">' + fmtDur(it.value) + '</text>';
+      }
+      if (it.label) s += '<text x="' + cx.toFixed(1) + '" y="' + (H - padB + 15) + '" text-anchor="middle">' + esc(it.label) + '</text>';
+      if (o.faceLabels && it.face) s += faceGroup(it.face, cx - 10, padT + ch + 7, 20);
+    });
+
+    // Goal line (dashed)
+    if (o.goal) {
+      const gy = y(o.goal).toFixed(1);
+      s += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + gy + '" y2="' + gy + '" stroke="var(--text-2)" stroke-width="1.5" stroke-dasharray="4 4"/>';
+    }
+    return s + '</svg>';
+  }
+
+  /** Sleep Quality line chart: y = 1..5 with faces on the axis. */
+  function qualityChart(items, W) {
+    const H = 180, padL = 28, padR = 10, padT = 12, padB = 22, ch = H - padT - padB;
+    const y = (q) => padT + ch * (5 - q) / 4;
+    let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="Sleep quality over the selected period">';
+    for (let q = 1; q <= 5; q++) {
+      const yy = y(q);
+      s += '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + yy.toFixed(1) + '" y2="' + yy.toFixed(1) + '" stroke="var(--grid)" stroke-width="1"/>';
+      s += faceGroup(q, 2, yy - 8, 16);
+    }
+    const n = items.length, slot = (W - padL - padR) / n, cx = (i) => padL + slot * (i + 0.5);
+    let d = '', pen = false, dots = '';
+    const r = n > 14 ? 2.5 : 4;
+    items.forEach((it, i) => {
+      if (it.q == null) { pen = false; return; } // gaps break the line
+      d += (pen ? 'L' : 'M') + cx(i).toFixed(1) + ' ' + y(it.q).toFixed(1) + ' ';
+      pen = true;
+      dots += '<circle cx="' + cx(i).toFixed(1) + '" cy="' + y(it.q).toFixed(1) + '" r="' + r + '" fill="var(--accent)"><title>' + esc(it.qTitle || '') + '</title></circle>';
+    });
+    s += '<path d="' + d + '" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>' + dots;
+    items.forEach((it, i) => {
+      if (it.label) s += '<text x="' + cx(i).toFixed(1) + '" y="' + (H - padB + 15) + '" text-anchor="middle">' + esc(it.label) + '</text>';
+    });
+    return s + '</svg>';
+  }
+
+  /**
+   * Sleep Timeline: one row per day of the month (the morning you woke up),
+   * columns from 8 PM (previous evening) to 12 PM (noon).
+   */
+  function timelineSVG(ym, W) {
+    const [Y, M] = ym.split('-').map(Number);
+    const days = new Date(Y, M, 0).getDate(), t = todayKey();
+    const lw = 24, top = 20, rowH = 12, H = top + days * rowH + 2;
+    const gx = lw, gw = W - lw - 2, x = (off) => gx + (off / 960) * gw; // 960 min = 16 h window
+    let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="Sleep timeline for ' + MONTHS[M - 1] + ' ' + Y + '">';
+    for (let d = 1; d <= days; d++) {
+      const key = Y + '-' + pad(M) + '-' + pad(d), yy = top + (d - 1) * rowH;
+      s += '<rect x="' + gx + '" y="' + (yy + 1) + '" width="' + gw.toFixed(1) + '" height="' + (rowH - 2) + '" rx="2" fill="var(--row)"/>';
+      s += '<text x="' + (lw - 6) + '" y="' + (yy + rowH / 2 + 3.5) + '" text-anchor="end"' + (key === t ? ' class="tl-today"' : '') + '>' + d + '</text>';
+    }
+    for (let h = 0; h <= 16; h += 2) {
+      const xx = x(h * 60).toFixed(1);
+      s += '<line x1="' + xx + '" x2="' + xx + '" y1="' + (top - 3) + '" y2="' + H + '" stroke="' + (h === 4 ? 'var(--border-strong)' : 'var(--grid)') + '" stroke-width="1"/>';
+      if (h % 4) continue; // label every 4 hours so labels never overlap on phones
+      const anchor = h === 0 ? 'start' : h === 16 ? 'end' : 'middle';
+      s += '<text x="' + xx + '" y="' + (top - 8) + '" text-anchor="' + anchor + '">' + hourLabel((20 + h) % 24) + '</text>';
+    }
+    const goal = state.settings.sleepGoal;
+    state.nights.forEach((n) => {
+      if (n.date.slice(0, 7) !== ym) return;
+      const d = Number(n.date.slice(8)), b = toMin(n.bedtime), w = toMin(n.wakeTime);
+      const bo = clamp(b >= 720 ? b - 1200 : b + 240, 0, 960); // minutes after 8 PM the evening before
+      const wo = clamp(w + 240, 0, 960);
+      if (wo - bo < 2) return;
+      const yy = top + (d - 1) * rowH, mins = sleptMin(n);
+      s += '<rect x="' + x(bo).toFixed(1) + '" y="' + (yy + 2) + '" width="' + (x(wo) - x(bo)).toFixed(1) + '" height="' + (rowH - 4) + '" rx="3" fill="' + (mins >= goal ? 'var(--accent)' : 'var(--accent-soft)') + '"><title>' + esc(nightRange(n.date) + ': ' + fmtTime(n.bedtime) + ' \u2192 ' + fmtTime(n.wakeTime) + ' (' + fmtDur(mins) + ')') + '</title></rect>';
+    });
+    return s + '</svg>';
+  }
+
+  /** Register a chart for the current view; drawn after the HTML is in place. */
+  function chartSlot(fn, cls) {
+    const i = chartQueue.push(fn) - 1;
+    return '<div class="chart ' + (cls || '') + '" data-chart="' + i + '"></div>';
+  }
+  function drawCharts() {
+    document.querySelectorAll('[data-chart]').forEach((el) => {
+      const fn = chartQueue[Number(el.dataset.chart)];
+      if (fn) el.innerHTML = fn(Math.max(240, Math.floor(el.clientWidth)));
+    });
+  }
+  const placeholder = () => '<div class="placeholder">Log 3 nights to see this chart.</div>';
+  const durLegend = () => '<div class="legend"><span><i class="sw" style="background:var(--accent)"></i>Goal met</span><span><i class="sw" style="background:var(--accent-soft)"></i>Below goal</span><span><i class="sw-dash"></i>Goal ' + fmtDur(state.settings.sleepGoal) + '</span></div>';
+
+  /* ===================================================================
+     SHARED UI PIECES
+     =================================================================== */
+  function seg(action, options, current, label, inline) {
+    return '<div class="seg' + (inline ? ' inline' : '') + '" role="group" aria-label="' + esc(label) + '">' +
+      options.map(([v, l]) => '<button type="button" data-action="' + action + '" data-value="' + v + '" class="' + (String(v) === String(current) ? 'on' : '') + '" aria-pressed="' + (String(v) === String(current)) + '">' + l + '</button>').join('') +
+      '</div>';
+  }
+  function stepper(scope, value) {
+    return '<div class="stepper" role="group" aria-label="Sleep Goal">' +
+      '<button type="button" data-action="goal-dec" data-scope="' + scope + '" aria-label="Decrease sleep goal by 15 minutes"' + (value <= GOAL_MIN ? ' disabled' : '') + '>\u2212</button>' +
+      '<output aria-live="polite">' + fmtDur(value) + '</output>' +
+      '<button type="button" data-action="goal-inc" data-scope="' + scope + '" aria-label="Increase sleep goal by 15 minutes"' + (value >= GOAL_MAX ? ' disabled' : '') + '>+</button></div>';
+  }
+  function demoBanner() {
+    return state.settings.demoMode
+      ? '<div class="banner" role="note"><span>You\'re viewing demo data.</span><button type="button" class="btn btn-sm" data-action="clear-demo">Clear Demo Data</button></div>'
+      : '';
+  }
+  function backupStatus() {
+    const lb = state.settings.lastBackup;
+    if (!lb) return { text: "No backup yet. Export one once you\u2019ve added your details.", overdue: false };
+    const k = toKey(new Date(lb)), ago = daysBetween(k, todayKey());
+    const rel = ago <= 0 ? 'today' : ago === 1 ? 'yesterday' : ago + ' days ago';
+    return { text: 'Last backup: ' + fmtDate(k) + ' (' + rel + ')', overdue: ago > BACKUP_DAYS };
+  }
+
+  /* ===================================================================
+     VIEWS
+     =================================================================== */
+
+  /* ----- Home ----- */
+  function viewHome() {
+    const s = state.settings, list = sortedDesc();
+    let h = '<header class="topbar"><h1 class="app-title">Minimal Sleep Tracker</h1>' +
+      '<button type="button" class="icon-btn" data-action="go" data-view="settings" aria-label="Settings">' + ICON.gear + '</button></header>';
+    h += demoBanner();
+    if (showBackupReminder()) {
+      h += '<div class="reminder" role="note"><span class="reminder-text">It\'s been a while since your last backup. <button type="button" class="link-btn" data-action="export">Export now</button></span>' +
+        '<button type="button" class="icon-btn sm" data-action="dismiss-reminder" aria-label="Dismiss reminder">' + ICON.x + '</button></div>';
+    }
+
+    if (!list.length) {
+      h += '<section class="empty-hero"><div class="empty-icon">' + ICON.moon + '</div>' +
+        '<h2>Your sleep, one night at a time</h2>' +
+        '<p>Log when you went to bed, when you woke up and how you slept. It takes just a few seconds.</p>' +
+        '<button type="button" class="btn btn-primary btn-xl" data-action="log">Log your first night</button></section>';
+      return h;
+    }
+
+    const last = list[0], mins = sleptMin(last), diff = mins - s.sleepGoal, goalTxt = fmtDur(s.sleepGoal);
+    const cmp = diff === 0 ? 'Right on your ' + goalTxt + ' goal'
+      : diff > 0 ? fmtGap(diff) + ' above your ' + goalTxt + ' goal'
+        : fmtGap(-diff) + ' below your ' + goalTxt + ' goal';
+    const label = last.date === todayKey() ? 'Last night' : 'Night of ' + fmtShort(addDays(last.date, -1));
+    h += '<section class="hero" aria-label="Last night">' +
+      '<div class="hero-label">' + label + '</div>' +
+      '<div class="hero-value">' + fmtDur(mins) + '</div>' +
+      '<div class="hero-compare' + (diff >= 0 ? ' met' : '') + '">' + cmp + '</div>' +
+      '<div class="hero-meta">' + fmtTime(last.bedtime) + ' \u2192 ' + fmtTime(last.wakeTime) + ' \u00b7 ' + QUALITY[last.quality] + '</div></section>';
+    h += '<button type="button" class="btn btn-primary btn-xl" data-action="log">+ Log Sleep</button>';
+
+    // Last 7 nights (rolling: 6 days ago … today)
+    const t = todayKey(), items = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = addDays(t, -i), n = nightByDate(d);
+      items.push({ label: WD[fromKey(d).getDay()], value: n ? sleptMin(n) : null, title: nightRange(d) + ': ' + (n ? fmtDur(sleptMin(n)) : 'not logged') });
+    }
+    h += '<section class="card home-week"><div class="card-head"><h2>Last 7 nights</h2><span class="card-sub">Goal ' + goalTxt + '</span></div>' +
+      chartSlot((w) => barChart({ items, goal: s.sleepGoal, height: 130, compact: true, aria: 'Hours slept over the last 7 nights' }, w)) + '</section>';
+    return h;
+  }
+
+  /* ----- Trends ----- */
+  function viewTrends() {
+    const s = state.settings, P = ui.trendsPeriod, t = todayKey(), nights = periodNights(P);
+    let h = '<header class="page-head"><h1>Trends</h1></header>';
+    h += seg('trends-period', [[7, '7 Days'], [28, '4 Weeks'], [365, '1 Year']], P, 'Period');
+
+    // KPIs
+    const mins = nights.map(sleptMin);
+    const has = nights.length > 0;
+    const debt = sum(mins.map((m) => Math.max(s.sleepGoal - m, 0)));
+    const met = mins.filter((m) => m >= s.sleepGoal).length;
+    const good = nights.filter((n) => n.quality >= 4).length; // rated Good or Excellent
+    h += '<div class="kpis">' +
+      kpi('Avg Sleep', has ? fmtDur(avg(mins)) : '\u2014', 'per night') +
+      kpi('Sleep Debt', has ? (debt ? fmtDur(debt) : '0h') : '\u2014', 'total below goal') +
+      kpi('Goal Met', has ? Math.round(met / nights.length * 100) + '%' : '\u2014', has ? met + ' of ' + nights.length + ' nights' : 'no nights yet') +
+      kpi('Good Nights', has ? Math.round(good / nights.length * 100) + '%' : '\u2014', has ? good + ' of ' + nights.length + ' nights' : 'no nights yet') +
+      '</div>';
+
+    // Chart items: one per night (7 / 28 days) or one per calendar month (1 year)
+    const items = [];
+    if (P === 365) {
+      const base = fromKey(t);
+      for (let i = 11; i >= 0; i--) {
+        const d = new Date(base.getFullYear(), base.getMonth() - i, 1);
+        const pref = d.getFullYear() + '-' + pad(d.getMonth() + 1);
+        const ns = state.nights.filter((n) => n.date.slice(0, 7) === pref);
+        const v = ns.length ? avg(ns.map(sleptMin)) : null, qq = ns.length ? avg(ns.map((n) => n.quality)) : null;
+        items.push({
+          label: MON[d.getMonth()], value: v, q: qq,
+          title: MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ': ' + (v != null ? fmtDur(v) + ' average' : 'no nights'),
+          qTitle: MONTHS[d.getMonth()] + ': ' + (qq != null ? QUALITY[Math.round(qq)] + ' on average' : '')
+        });
+      }
+    } else {
+      for (let i = P - 1; i >= 0; i--) {
+        const d = addDays(t, -i), dt = fromKey(d), n = nightByDate(d);
+        let label = '';
+        if (P === 7) label = WD[dt.getDay()];
+        else if (dt.getDay() === weekStartIdx()) label = fmtShort(d); // one label per week
+        items.push({
+          label, value: n ? sleptMin(n) : null, q: n ? n.quality : null,
+          title: nightRange(d) + ': ' + (n ? fmtDur(sleptMin(n)) : 'not logged'),
+          qTitle: n ? nightRange(d) + ': ' + QUALITY[n.quality] : ''
+        });
+      }
+    }
+    const enough = nights.length >= MIN_NIGHTS;
+    h += '<section class="card"><div class="card-head"><h2>Hours Slept vs Goal</h2><span class="card-sub">' + (P === 365 ? 'Monthly average' : 'Each night') + '</span></div>' +
+      (enough ? chartSlot((w) => barChart({ items, goal: s.sleepGoal, aria: 'Hours slept compared with your goal' }, w)) + durLegend() : placeholder()) + '</section>';
+    h += '<section class="card"><div class="card-head"><h2>Sleep Quality</h2><span class="card-sub">' + (P === 365 ? 'Monthly average' : 'Each night') + '</span></div>' +
+      (enough ? chartSlot((w) => qualityChart(items, w)) : placeholder()) + '</section>';
+    return h;
+  }
+  function kpi(label, value, sub) {
+    return '<div class="card kpi"><div class="kpi-label">' + label + '</div><div class="kpi-value">' + value + '</div><div class="kpi-sub">' + sub + '</div></div>';
+  }
+
+  /* ----- Patterns ----- */
+  function viewPatterns() {
+    const s = state.settings, P = ui.patternsPeriod, nights = periodNights(P), enough = nights.length >= MIN_NIGHTS;
+    let h = '<header class="page-head"><h1>Patterns</h1></header>';
+
+    // Sleep Timeline (own month switcher, ignores the period switch)
+    const curYM = todayKey().slice(0, 7);
+    const firstYM = state.nights.reduce((m, n) => (n.date.slice(0, 7) < m ? n.date.slice(0, 7) : m), curYM);
+    if (!ui.tlMonth || ui.tlMonth > curYM) ui.tlMonth = curYM;
+    if (ui.tlMonth < firstYM) ui.tlMonth = firstYM;
+    const [ty, tm] = ui.tlMonth.split('-').map(Number);
+    const monthHas = state.nights.some((n) => n.date.slice(0, 7) === ui.tlMonth);
+    h += '<section class="card"><div class="card-head"><h2>Sleep Timeline</h2>' +
+      '<div class="month-switch"><button type="button" class="icon-btn sm" data-action="tl-prev" aria-label="Previous month"' + (ui.tlMonth <= firstYM ? ' disabled' : '') + '>' + ICON.chevLeft + '</button>' +
+      '<strong>' + MON[tm - 1] + ' ' + ty + '</strong>' +
+      '<button type="button" class="icon-btn sm" data-action="tl-next" aria-label="Next month"' + (ui.tlMonth >= curYM ? ' disabled' : '') + '>' + ICON.chevRight + '</button></div></div>' +
+      chartSlot((w) => timelineSVG(ui.tlMonth, w), 'timeline') +
+      (monthHas ? '' : '<p class="tl-empty">No nights logged in ' + MONTHS[tm - 1] + '.</p>') + '</section>';
+
+    h += seg('patterns-period', [[28, '4 Weeks'], [90, '3 Months'], [365, '1 Year']], P, 'Period');
+
+    // Bedtime Consistency
+    h += '<section class="card"><div class="card-head"><h2>Bedtime Consistency</h2></div>';
+    if (enough) {
+      // After-midnight bedtimes count as a continuation of the evening (12:30 AM = 24:30)
+      const beds = nights.map((n) => { const m = toMin(n.bedtime); return m < 720 ? m + 1440 : m; });
+      const mb = avg(beds);
+      const spread = Math.round(avg(beds.map((b) => Math.abs(b - mb))) / 5) * 5; // mean absolute deviation
+      const mw = avg(nights.map((n) => toMin(n.wakeTime)));
+      h += '<div class="stats3">' +
+        stat(fmtTime(minToHHMM(mb)), 'Avg Bedtime') +
+        stat(fmtTime(minToHHMM(mw)), 'Avg Wake Time') +
+        stat('\u00b1' + spread + ' min', 'Bedtime spread') + '</div>';
+    } else h += placeholder();
+    h += '</section>';
+
+    // Sleep by Weekday
+    h += '<section class="card"><div class="card-head"><h2>Sleep by Weekday</h2><span class="card-sub">Average</span></div>';
+    if (enough) {
+      const ws = weekStartIdx(), items = [];
+      for (let i = 0; i < 7; i++) {
+        const wd = (ws + i) % 7, ns = nights.filter((n) => fromKey(n.date).getDay() === wd);
+        const v = ns.length ? avg(ns.map(sleptMin)) : null;
+        items.push({ label: WD[wd], value: v, title: WD[wd] + ': ' + (v != null ? fmtDur(v) + ' (' + ns.length + ' nights)' : 'no nights') });
+      }
+      h += chartSlot((w) => barChart({ items, goal: s.sleepGoal, height: 180, aria: 'Average sleep by weekday' }, w)) + durLegend();
+    } else h += placeholder();
+    h += '</section>';
+
+    // Quality Breakdown
+    h += '<section class="card"><div class="card-head"><h2>Quality Breakdown</h2><span class="card-sub">' + nights.length + ' nights</span></div>';
+    if (enough) {
+      const counts = [0, 0, 0, 0, 0, 0];
+      nights.forEach((n) => counts[n.quality]++);
+      h += '<div class="qbar" role="img" aria-label="' + [1, 2, 3, 4, 5].map((q) => QUALITY[q] + ' ' + counts[q]).join(', ') + '">' +
+        [1, 2, 3, 4, 5].filter((q) => counts[q]).map((q) => '<span style="flex:' + counts[q] + ';background:var(--q' + q + ')" title="' + QUALITY[q] + ': ' + counts[q] + '"></span>').join('') + '</div>';
+      h += '<ul class="qlegend">' + [5, 4, 3, 2, 1].map((q) => '<li>' + faceSVG(q, 18) + '<span>' + QUALITY[q] + '</span><span class="qcount">' + counts[q] + ' \u00b7 ' + Math.round(counts[q] / nights.length * 100) + '%</span></li>').join('') + '</ul>';
+    } else h += placeholder();
+    h += '</section>';
+
+    // Sleep Length by Quality
+    h += '<section class="card"><div class="card-head"><h2>Sleep Length by Quality</h2><span class="card-sub">Average</span></div>';
+    if (enough) {
+      const items = [1, 2, 3, 4, 5].map((q) => {
+        const ns = nights.filter((n) => n.quality === q);
+        const v = ns.length ? avg(ns.map(sleptMin)) : null;
+        return { face: q, value: v, title: QUALITY[q] + ': ' + (v != null ? fmtDur(v) : 'no nights') };
+      });
+      h += chartSlot((w) => barChart({ items, goal: s.sleepGoal, height: 200, showValues: true, faceLabels: true, aria: 'Average sleep length for each quality level' }, w));
+    } else h += placeholder();
+    h += '</section>';
+
+    // Factors: only factors with 3+ nights in the period; hidden entirely otherwise
+    const rows = [];
+    state.factors.forEach((f) => {
+      const withN = nights.filter((n) => n.factors.includes(f.id));
+      if (withN.length < MIN_NIGHTS) return;
+      const without = nights.filter((n) => !n.factors.includes(f.id));
+      rows.push({ f, w: avg(withN.map(sleptMin)), wo: without.length ? avg(without.map(sleptMin)) : null, nw: withN.length });
+    });
+    if (rows.length) {
+      const max = Math.max(...rows.map((r) => Math.max(r.w, r.wo || 0)));
+      h += '<section class="card"><div class="card-head"><h2>Factors</h2><span class="card-sub">Avg sleep with / without</span></div>';
+      rows.forEach((r) => {
+        const diff = r.wo != null ? Math.round(r.w - r.wo) : null;
+        const diffTxt = diff == null ? '' : diff === 0 ? 'No difference' : (diff > 0 ? '+' : '\u2212') + fmtGap(Math.abs(diff));
+        h += '<div class="frow"><div class="frow-head"><span>' + esc(r.f.name) + '</span><span class="fdiff">' + diffTxt + '</span></div>' +
+          '<div class="fbar"><span>With</span><div class="ftrack"><i style="width:' + (r.w / max * 100).toFixed(1) + '%"></i></div><b>' + fmtDur(r.w) + '</b></div>' +
+          '<div class="fbar"><span>Without</span><div class="ftrack without"><i style="width:' + (r.wo != null ? (r.wo / max * 100).toFixed(1) : 0) + '%"></i></div><b>' + (r.wo != null ? fmtDur(r.wo) : '\u2014') + '</b></div>' +
+          '<p class="fnote">' + r.nw + ' nights with ' + esc(r.f.name.toLowerCase()) + '</p></div>';
+      });
+      h += '</section>';
+    }
+    return h;
+  }
+  function stat(value, label) { return '<div><div class="stat-value">' + value + '</div><div class="stat-label">' + label + '</div></div>'; }
+
+  /* ----- History ----- */
+  function viewHistory() {
+    const list = sortedDesc();
+    let h = '<header class="page-head"><h1>History</h1></header>';
+    if (!list.length) {
+      return h + '<div class="card" style="text-align:center;padding:32px 16px"><p style="color:var(--text-2);margin:0 0 16px">No nights logged yet.</p>' +
+        '<button type="button" class="btn btn-primary" data-action="log">Log your first night</button></div>';
+    }
+    h += '<p class="hist-meta">' + list.length + (list.length === 1 ? ' night' : ' nights') + ' \u00b7 tap a night to edit it</p>';
+    if (state.factors.length) {
+      h += '<div class="factor-legend" aria-label="Factor colors">' + state.factors.map((f, i) => '<span><i class="fdot" style="background:' + factorColor(i) + '"></i>' + esc(f.name) + '</span>').join('') + '</div>';
+    }
+    let cur = '';
+    list.forEach((n) => {
+      const ym = n.date.slice(0, 7);
+      if (ym !== cur) {
+        if (cur) h += '</div></section>';
+        cur = ym;
+        const [y, m] = ym.split('-').map(Number);
+        h += '<section class="month-group"><h2>' + MONTHS[m - 1] + ' ' + y + '</h2><div class="hist-list">';
+      }
+      const dots = state.factors.map((f, i) => n.factors.includes(f.id) ? '<i class="fdot" style="background:' + factorColor(i) + '" title="' + esc(f.name) + '"></i>' : '').join('');
+      const fnames = state.factors.filter((f) => n.factors.includes(f.id)).map((f) => f.name).join(', ');
+      h += '<button type="button" class="hist-row" data-action="edit-night" data-date="' + n.date + '" aria-label="' + esc(nightRange(n.date) + ', ' + fmtDur(sleptMin(n)) + ', ' + QUALITY[n.quality] + (fnames ? ', ' + fnames : '')) + '">' +
+        '<div><div class="hist-date">' + nightRange(n.date) + '</div><div class="hist-times">' + fmtTime(n.bedtime) + ' \u2192 ' + fmtTime(n.wakeTime) + '</div>' +
+        (dots ? '<div class="dots">' + dots + '</div>' : '') + '</div>' +
+        '<div class="hist-dur">' + fmtDur(sleptMin(n)) + '</div>' + faceSVG(n.quality, 26) + '</button>';
+    });
+    return h + '</div></section>';
+  }
+
+  /* ----- Settings ----- */
+  function viewSettings() {
+    const s = state.settings;
+    let h = '<header class="page-head"><h1>Settings</h1></header>';
+
+    h += '<section class="card"><h2 class="sec-title">Sleep Goal</h2>' +
+      '<div class="setting"><div><div class="setting-label">Sleep Goal</div><p class="setting-hint">How much sleep you aim for each night.</p></div>' + stepper('settings', s.sleepGoal) + '</div>' +
+      '<div class="setting"><div><div class="setting-label">Target Bedtime<span class="opt">Optional</span></div><p class="setting-hint">Pre-fills your first entry.</p></div>' +
+      '<div class="inline-row"><input class="input input-time" type="time" id="set-target" value="' + s.targetBedtime + '" aria-label="Target Bedtime">' +
+      (s.targetBedtime ? '<button type="button" class="link-btn" data-action="clear-target">Clear</button>' : '') + '</div></div></section>';
+
+    h += '<section class="card"><div class="card-head"><h2>Factors</h2><span class="card-sub">' + state.factors.length + ' of ' + MAX_FACTORS + '</span></div>' +
+      '<p class="setting-hint">Things that might affect your sleep. Pick them under More details when you log a night. Edit a name to rename it.</p><ul class="factor-list">';
+    state.factors.forEach((f, i) => {
+      h += '<li><i class="fdot" style="background:' + factorColor(i) + '"></i>' +
+        '<input class="input" data-factor-id="' + esc(f.id) + '" value="' + esc(f.name) + '" maxlength="' + FACTOR_NAME_MAX + '" aria-label="Factor name">' +
+        '<button type="button" class="icon-btn" data-action="factor-delete" data-id="' + esc(f.id) + '" aria-label="Delete ' + esc(f.name) + '">' + ICON.trash + '</button>' +
+        '<div class="err" id="ferr-' + esc(f.id) + '"></div></li>';
+    });
+    h += '</ul><div class="factor-add"><input class="input" id="new-factor" placeholder="Add a factor, e.g. Exercise" maxlength="' + FACTOR_NAME_MAX + '" aria-label="New factor name">' +
+      '<button type="button" class="btn" data-action="factor-add">Add</button></div><div class="err" id="ferr-new"></div></section>';
+
+    h += '<section class="card"><h2 class="sec-title">Display</h2>' +
+      '<div class="setting"><div class="setting-label">Theme</div>' + seg('set-theme', [['light', 'Light'], ['dark', 'Dark']], s.theme, 'Theme', true) + '</div>' +
+      '<div class="setting"><div class="setting-label">Time Format</div>' + seg('set-timeFormat', [['12h', '12h'], ['24h', '24h']], s.timeFormat, 'Time Format', true) + '</div>' +
+      '<div class="setting"><div class="setting-label">Week Starts On</div>' + seg('set-weekStartsOn', [['sunday', 'Sunday'], ['monday', 'Monday']], s.weekStartsOn, 'Week Starts On', true) + '</div></section>';
+
+    const bs = backupStatus();
+    h += '<section class="card" id="data"><h2 class="sec-title">Data</h2>' +
+      '<p class="data-warning">' + esc(STORAGE_WARNING) + ' ' + esc(MOVE_NOTE) + '</p>' +
+      '<div class="data-row"><button type="button" class="btn btn-primary" data-action="export">Export JSON</button><span class="backup-status' + (bs.overdue ? ' overdue' : '') + '">' + esc(bs.text) + '</span></div>' +
+      '<div class="data-row"><button type="button" class="btn" data-action="import">Import JSON</button><span class="hint">Replaces the data in this browser with a backup file.</span></div>' +
+      '<hr class="divider">';
+    if (s.demoMode) {
+      h += '<p class="erase-text">The sample nights are here so you can explore the charts. Clear them when you\'re ready to log your own sleep.</p>' +
+        '<button type="button" class="btn btn-danger-outline" data-action="clear-demo">Clear Demo Data</button>';
+    } else {
+      h += '<p class="erase-text">Removes all nights, factors and settings from this browser. This can\u2019t be undone \u2014 export a backup first.</p>' +
+        '<button type="button" class="btn btn-danger-outline" data-action="erase-all">Erase All Data</button>';
+    }
+    h += '</section><p class="version-note">Minimal Sleep Tracker</p>';
+    return h;
+  }
+
+  /* ----- Guide ----- */
+  function viewGuide() {
+    return '<header class="page-head"><h1>Guide</h1></header><div class="guide">' +
+      '<section class="card"><h2>How It Works</h2>' +
+      '<p>Each morning, tap <strong>+</strong> and log three things: when you went to bed, when you woke up and how well you slept. Bedtime and wake time are pre-filled from your last entry, so on a typical night you just tap a face and <strong>Save</strong>.</p>' +
+      '<p><strong>More details</strong> is optional. Open it to record how many times you woke up, any factors that may have affected your sleep (like caffeine or a late meal) and a short note.</p>' +
+      '<p>Each night is saved under the morning you woke up. Logging the same night again opens your existing entry, so there are never duplicates. To log a night you missed, tap the <strong>Night of\u2026</strong> date at the top of the form.</p>' +
+      '<p>Your sleep goal sets the dashed target line on the charts. Change it anytime in Settings.</p></section>' +
+
+      '<section class="card"><h2>Reading Your Charts</h2>' +
+      '<h3>Trends</h3><p><strong>Avg Sleep</strong> is your average per night. <strong>Sleep Debt</strong> adds up how far short of your goal you fell; extra sleep on other nights doesn\u2019t cancel it out. <strong>Goal Met</strong> is the share of nights you reached your goal. <strong>Good Nights</strong> is the share of nights you rated Good or Excellent. Darker bars are nights that met your goal, lighter bars fell short. In <strong>1 Year</strong>, each bar is a monthly average.</p>' +
+      '<h3>Patterns</h3><p><strong>Bedtime spread</strong> shows how far, on average, your bedtime drifts from your usual one \u2014 the smaller, the more regular. <strong>Sleep by Weekday</strong>, <strong>Quality Breakdown</strong> and <strong>Sleep Length by Quality</strong> help you see when and how you sleep best.</p>' +
+      '<h3>Sleep Timeline</h3><p>Each row is one day of the month (the morning you woke up). The shaded bar shows when you were asleep, from 8 PM the evening before to 12 PM noon. Use the arrows to switch months.</p>' +
+      '<h3>Factors</h3><p>Compares your average sleep on nights with a factor and nights without it. A factor appears once it has at least 3 nights in the selected period.</p>' +
+      '<h3>Why 3 nights?</h3><p>Averages from one or two nights can be misleading, so each chart waits until there are at least 3 nights in the selected period. Until then you\u2019ll see \u201cLog 3 nights to see this chart.\u201d</p>' +
+      '<div class="note-box">This tracker is for personal insight only and is not medical advice. If you\u2019re concerned about your sleep, talk to a healthcare professional.</div></section>' +
+
+      '<section class="card"><h2>Backup and Moving to Another Device</h2>' +
+      '<p>' + esc(STORAGE_WARNING) + ' ' + esc(MOVE_NOTE) + '</p>' +
+      '<ol><li>Go to <strong>Settings \u2192 Data</strong> and tap <strong>Export JSON</strong>. A backup file downloads to your device.</li>' +
+      '<li>Keep it somewhere safe, like a cloud drive or your email.</li>' +
+      '<li>To restore or move your data, open the tracker file on the other device, go to <strong>Settings \u2192 Data</strong>, tap <strong>Import JSON</strong> and choose the backup. Importing replaces the data in that browser.</li></ol>' +
+      '<p>Always open the tracker in the same browser: another browser on the same device won\u2019t see your data.</p></section>' +
+
+      '<section class="card"><h2>Clearing Demo Data</h2>' +
+      '<p>The tracker opens with about two months of sample nights so you can see every chart in action. When you\u2019re ready, tap <strong>Clear Demo Data</strong> on the Home banner or in <strong>Settings \u2192 Data</strong>, set your sleep goal, and start logging.</p>' +
+      '<p>Any nights you logged yourself while the demo was on are kept.</p></section></div>';
+  }
+
+  /* ----- One-time goal screen (after Clear Demo Data or Erase All Data) ----- */
+  function viewOnboarding() {
+    return '<section class="onboard"><div class="empty-icon">' + ICON.moon + '</div>' +
+      '<h1>What\'s your sleep goal?</h1>' +
+      '<p>Pick how much sleep you aim for each night. You can change it anytime in Settings.</p>' +
+      stepper('ob', ui.obGoal) +
+      '<label class="field"><span>Target Bedtime<span class="opt">Optional</span></span><input class="input" type="time" id="ob-bed" value="' + esc(ui.obBed || '') + '"></label>' +
+      '<p class="hint">Used to pre-fill your first entry.</p>' +
+      '<button type="button" class="btn btn-primary btn-xl" data-action="ob-start">Start</button></section>';
+  }
+
+  /* ===================================================================
+     RENDER
+     =================================================================== */
+  const VIEWS = { home: viewHome, trends: viewTrends, patterns: viewPatterns, history: viewHistory, settings: viewSettings, guide: viewGuide };
+
+  function applyTheme() {
+    const dark = state.settings.theme === 'dark';
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', dark ? '#141E30' : '#FFFFFF');
+  }
+
+  function render() {
+    applyTheme();
+    chartQueue = [];
+    const main = $('#main'), tabbar = $('#tabbar');
+    if (state.settings.onboarding) {
+      tabbar.hidden = true;
+      main.innerHTML = viewOnboarding();
+      return;
+    }
+    tabbar.hidden = false;
+    // Keep the scroll position: hold the old height while the new HTML and charts are drawn,
+    // otherwise the page briefly gets shorter and the browser jumps up.
+    const scrollY = window.scrollY;
+    const active = document.activeElement;
+    const focusKey = active && active.dataset && active.dataset.action ? '[data-action="' + active.dataset.action + '"]' + (active.dataset.value ? '[data-value="' + active.dataset.value + '"]' : '') : null;
+    main.style.minHeight = main.offsetHeight + 'px';
+    main.innerHTML = (VIEWS[ui.view] || viewHome)();
+    const tab = ['history', 'settings', 'guide'].includes(ui.view) ? 'more' : ui.view;
+    document.querySelectorAll('.tab[data-tab]').forEach((b) => {
+      const on = b.dataset.tab === tab;
+      b.classList.toggle('active', on);
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    document.querySelectorAll('#more-menu [data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === ui.view));
+    drawCharts();
+    main.style.minHeight = '';
+    window.scrollTo(0, scrollY);
+    // Return keyboard focus to the same control (e.g. the period button just pressed)
+    if (focusKey) { const f = main.querySelector(focusKey); if (f) f.focus({ preventScroll: true }); }
+  }
+
+  function go(view) {
+    closeMore();
+    ui.view = view;
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function openMore() {
+    ui.moreOpen = true;
+    $('#more-menu').hidden = false;
+    $('#more-btn').setAttribute('aria-expanded', 'true');
+  }
+  function closeMore() {
+    if (!ui.moreOpen) return;
+    ui.moreOpen = false;
+    $('#more-menu').hidden = true;
+    $('#more-btn').setAttribute('aria-expanded', 'false');
+  }
+
+  /* ===================================================================
+     LOG SLEEP SHEET
+     =================================================================== */
+  function openLog(date, showDate) {
+    closeMore();
+    date = date || todayKey();
+    const ex = nightByDate(date);
+    if (ex) {
+      sheet = { editingId: ex.id, date: ex.date, bed: ex.bedtime, wake: ex.wakeTime, quality: ex.quality, awoken: ex.timesAwoken, factors: new Set(ex.factors), note: ex.note || '' };
+    } else {
+      const af = autofill();
+      sheet = { editingId: null, date, bed: af.bed, wake: af.wake, quality: null, awoken: null, factors: new Set(), note: '' };
+    }
+    sheet.detailsOpen = false; // collapsed by default
+    sheet.showDate = !!showDate;
+    const already = !!document.querySelector('#sheet-wrap.open');
+    renderSheet(!already);
+  }
+
+  function renderSheet(animate) {
+    const s = sheet, t = todayKey(), dur = calcDur(s.bed, s.wake);
+    const chips = state.factors.length
+      ? '<div class="chips" role="group" aria-label="Factors">' + state.factors.map((f) => '<button type="button" class="chip' + (s.factors.has(f.id) ? ' on' : '') + '" data-action="chip" data-id="' + esc(f.id) + '" aria-pressed="' + s.factors.has(f.id) + '">' + esc(f.name) + '</button>').join('') + '</div>'
+      : '<p class="hint">No factors yet. Add them in Settings.</p>';
+    $('#sheet-root').innerHTML =
+      '<div class="sheet-wrap' + (animate ? '' : ' open') + '" id="sheet-wrap">' +
+      '<div class="sheet-backdrop" data-action="close-sheet"></div>' +
+      '<div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1">' +
+      '<div class="sheet-grip" aria-hidden="true"></div>' +
+      '<div class="sheet-head"><div><h2 id="sheet-title">Log Sleep</h2>' +
+      '<button type="button" class="night-of" data-action="toggle-date" aria-expanded="' + s.showDate + '" aria-controls="date-field"><span id="night-of">' + nightOfText() + '</span>' + ICON.chevDown + '</button></div>' +
+      '<button type="button" class="icon-btn" data-action="close-sheet" aria-label="Close">' + ICON.x + '</button></div>' +
+
+      '<div class="date-field" id="date-field"' + (s.showDate ? '' : ' hidden') + '>' +
+      '<label class="field"><span>Wake-up date</span><input class="input" type="date" id="f-date" value="' + s.date + '" max="' + t + '"></label>' +
+      '<p class="hint">Choose the morning you woke up. The night is named after the evening before.</p><div class="err" id="err-date"></div></div>' +
+
+      '<div class="time-grid">' +
+      '<label class="field"><span>Bedtime</span><input class="input" type="time" id="f-bed" value="' + s.bed + '"><span class="err" id="err-bed"></span></label>' +
+      '<label class="field"><span>Wake Time</span><input class="input" type="time" id="f-wake" value="' + s.wake + '"><span class="err" id="err-wake"></span></label></div>' +
+      '<div class="err" id="err-same" style="margin-top:6px"></div>' +
+      '<div class="duration"><span class="duration-label">Time asleep</span><strong id="f-dur">' + (dur ? fmtDur(dur) : '\u2014') + '</strong></div>' +
+      '<div class="warn" id="f-warn"></div>' +
+
+      '<div class="field-block"><span class="block-label" id="q-label">Sleep Quality</span>' +
+      '<div class="qrow" role="radiogroup" aria-labelledby="q-label">' + [1, 2, 3, 4, 5].map((q) =>
+        '<button type="button" role="radio" class="qbtn' + (s.quality === q ? ' on' : '') + '" data-action="quality" data-q="' + q + '" aria-checked="' + (s.quality === q) + '">' + faceSVG(q, 42) + '<span>' + QUALITY[q] + '</span></button>').join('') + '</div>' +
+      '<div class="err" id="err-q" style="margin-top:6px"></div></div>' +
+
+      '<button type="button" class="details-toggle" data-action="toggle-details" aria-expanded="' + s.detailsOpen + '" aria-controls="details">' +
+      '<span><span class="details-title">More details<span class="opt">Optional</span></span>' +
+      '<span class="details-sub">Times awoken \u00b7 Factors \u00b7 Note<span class="details-count" id="details-count"></span></span></span>' +
+      '<span class="details-chev">' + ICON.chevDown + '</span></button>' +
+      '<div class="details" id="details"' + (s.detailsOpen ? '' : ' hidden') + '>' +
+      '<div class="row-between"><span class="block-label">Times Awoken</span><div class="stepper" role="group" aria-label="Times Awoken">' +
+      '<button type="button" data-action="awoken-dec" aria-label="Fewer times">\u2212</button><output id="f-awoken"></output><button type="button" data-action="awoken-inc" aria-label="More times">+</button></div></div>' +
+      '<div><span class="block-label" style="display:block;margin-bottom:8px">Factors</span>' + chips + '</div>' +
+      '<label class="field"><span>Note</span><textarea class="input" id="f-note" maxlength="' + NOTE_MAX + '" placeholder="Anything worth remembering?">' + esc(s.note) + '</textarea></label></div>' +
+
+      '<div class="sheet-actions"><button type="button" class="btn btn-primary btn-xl" data-action="save-night">Save</button>' +
+      (s.editingId ? '<button type="button" class="btn btn-danger-outline btn-block" data-action="delete-night">Delete</button>' : '') + '</div>' +
+      '</div></div>';
+    document.body.classList.add('no-scroll');
+    updateDuration();
+    updateAwoken();
+    updateDetailsCount();
+    const sh = document.querySelector('.sheet');
+    if (animate) requestAnimationFrame(() => requestAnimationFrame(() => { const w = $('#sheet-wrap'); if (w) w.classList.add('open'); }));
+    if (sh) sh.focus({ preventScroll: true });
+  }
+
+  function nightOfText() { return sheet.date && DATE_RE.test(sheet.date) ? 'Night of ' + fmtShort(addDays(sheet.date, -1)) : 'Night of \u2014'; }
+
+  function closeSheet() {
+    const w = $('#sheet-wrap');
+    sheet = null;
+    document.body.classList.remove('no-scroll');
+    if (!w) return;
+    w.classList.remove('open');
+    setTimeout(() => { if (!sheet) $('#sheet-root').innerHTML = ''; }, 260);
+  }
+
+  function updateDuration() {
+    const dur = calcDur(sheet.bed, sheet.wake), el = $('#f-dur'), warn = $('#f-warn');
+    if (el) el.textContent = dur && sheet.bed !== sheet.wake ? fmtDur(dur) : '\u2014';
+    if (warn) warn.textContent = dur && dur > LONG_SLEEP ? "That's over 16 hours. Check your bedtime and wake time." : '';
+  }
+  function updateAwoken() {
+    const el = $('#f-awoken');
+    if (!el) return;
+    el.textContent = sheet.awoken == null ? '0' : String(sheet.awoken);
+    el.classList.toggle('muted', sheet.awoken == null);
+  }
+  function updateDetailsCount() {
+    const n = sheet.factors.size + (sheet.awoken ? 1 : 0) + (sheet.note.trim() ? 1 : 0);
+    const el = $('#details-count');
+    if (el) el.textContent = n ? ' \u00b7 ' + n + ' added' : '';
+  }
+  function setErr(key, msg) {
+    const el = $('#err-' + key);
+    if (el) el.textContent = msg || '';
+    const input = { date: '#f-date', bed: '#f-bed', wake: '#f-wake' }[key];
+    if (input && $(input)) $(input).classList.toggle('invalid', !!msg);
+  }
+
+  function saveNight() {
+    const s = sheet, t = todayKey(), errs = {};
+    if (!s.date) errs.date = 'This field is required.';
+    else if (s.date > t) errs.date = "You can't log a future date.";
+    if (!s.bed) errs.bed = 'This field is required.';
+    if (!s.wake) errs.wake = 'This field is required.';
+    if (s.bed && s.wake && s.bed === s.wake) errs.same = "Bedtime and wake time can't be the same.";
+    if (!s.quality) errs.q = 'This field is required.';
+    ['date', 'bed', 'wake', 'same', 'q'].forEach((k) => setErr(k, errs[k]));
+    if (Object.keys(errs).length) {
+      if (errs.date && !s.showDate) { s.showDate = true; $('#date-field').hidden = false; document.querySelector('.night-of').setAttribute('aria-expanded', 'true'); }
+      const first = errs.date ? '#f-date' : errs.bed ? '#f-bed' : errs.wake || errs.same ? '#f-wake' : '.qbtn';
+      const el = $(first);
+      if (el) { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); el.focus({ preventScroll: true }); }
+      return;
+    }
+    const clash = nightByDate(s.date);
+    if (clash && clash.id !== s.editingId) { setErr('date', 'This night is already logged.'); return; }
+    const valid = new Set(state.factors.map((f) => f.id));
+    const data = {
+      date: s.date, bedtime: s.bed, wakeTime: s.wake, quality: s.quality,
+      timesAwoken: s.awoken, factors: [...s.factors].filter((id) => valid.has(id)),
+      note: s.note.trim().slice(0, NOTE_MAX)
+    };
+    const editing = !!s.editingId;
+    if (editing) {
+      const n = state.nights.find((x) => x.id === s.editingId);
+      if (n) Object.assign(n, data);
+    } else {
+      state.nights.push(Object.assign({ id: uid('n') }, data, { demo: false, created: new Date().toISOString() }));
+    }
+    persist();
+    closeSheet();
+    render();
+    toast(editing ? 'Changes saved.' : 'Night saved.');
+  }
+
+  async function deleteNight() {
+    const n = state.nights.find((x) => x.id === sheet.editingId);
+    if (!n) return;
+    const ok = await dialog({
+      title: 'Delete this night?',
+      body: nightRange(n.date) + ' \u00b7 ' + fmtDur(sleptMin(n)) + '. This can\u2019t be undone.',
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, kind: 'danger' }]
+    });
+    if (!ok) return;
+    state.nights = state.nights.filter((x) => x.id !== n.id);
+    persist();
+    closeSheet();
+    render();
+    toast('Night deleted.');
+  }
+
+  /* ===================================================================
+     DIALOG (confirmations)
+     =================================================================== */
+  function dialog(opts) {
+    return new Promise((resolve) => {
+      const root = $('#dialog-root'), prev = document.activeElement;
+      root.innerHTML = '<div class="dialog-wrap"><div class="dialog-backdrop"></div>' +
+        '<div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-title" aria-describedby="dlg-body">' +
+        '<h3 id="dlg-title">' + esc(opts.title) + '</h3><p id="dlg-body">' + esc(opts.body) + '</p>' +
+        '<div class="dialog-actions">' + opts.buttons.map((b, i) => '<button type="button" class="btn ' + (b.kind === 'danger' ? 'btn-danger' : b.kind === 'primary' ? 'btn-primary' : '') + '" data-i="' + i + '">' + esc(b.label) + '</button>').join('') + '</div></div></div>';
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(opts.buttons[0].value); } };
+      function finish(v) {
+        document.removeEventListener('keydown', onKey, true);
+        root.innerHTML = '';
+        try { if (prev && prev.focus) prev.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+        resolve(v);
+      }
+      document.addEventListener('keydown', onKey, true);
+      root.querySelectorAll('[data-i]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); finish(opts.buttons[Number(b.dataset.i)].value); }));
+      root.querySelector('.dialog-backdrop').addEventListener('click', () => finish(opts.buttons[0].value));
+      root.querySelector('[data-i="0"]').focus();
+    });
+  }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const el = $('#toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  }
+
+  /* ===================================================================
+     DATA ACTIONS: export, import, clear demo, erase
+     =================================================================== */
+  function exportJSON() {
+    const now = new Date();
+    state.settings.lastBackup = now.toISOString();
+    const payload = { app: APP_ID, version: 1, exportedAt: now.toISOString(), data: serialize() };
+    try {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'minimal-sleep-tracker-backup-' + todayKey() + '.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch (e) {
+      toast("Couldn't create the backup file.");
+      return;
+    }
+    persist();
+    if (!sheet) render();
+    toast('Backup downloaded.');
+  }
+
+  function importFile(file) {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      let parsed = null;
+      try { parsed = normalize(JSON.parse(reader.result)); } catch (e) { parsed = null; }
+      if (!parsed) {
+        await dialog({ title: "This file can't be imported", body: "It isn't a valid Minimal Sleep Tracker backup. Choose a .json file made with Export JSON.", buttons: [{ label: 'OK', value: true, kind: 'primary' }] });
+        return;
+      }
+      let exported = '';
+      try { const raw = JSON.parse(reader.result); if (validISO(raw.exportedAt)) exported = ' from ' + fmtDate(toKey(new Date(raw.exportedAt))); } catch (e) { /* ignore */ }
+      const ok = await dialog({
+        title: 'Replace your current data?',
+        body: 'This replaces everything in this browser with the backup' + exported + ' (' + parsed.nights.length + (parsed.nights.length === 1 ? ' night' : ' nights') + '). Your current data will be lost unless you\u2019ve exported it.',
+        buttons: [{ label: 'Cancel', value: false }, { label: 'Replace data', value: true, kind: 'danger' }]
+      });
+      if (!ok) return;
+      parsed.settings.onboarding = false;
+      state = parsed;
+      persist();
+      ui.view = 'home';
+      ui.tlMonth = null;
+      render();
+      window.scrollTo(0, 0);
+      toast('Backup imported.');
+    };
+    reader.onerror = () => toast("Couldn't read that file.");
+    reader.readAsText(file);
+  }
+
+  async function clearDemo() {
+    const ok = await dialog({
+      title: 'Clear demo data?',
+      body: 'This removes the sample nights so you can start with your own. Any nights you logged yourself will stay.',
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Clear Demo Data', value: true, kind: 'primary' }]
+    });
+    if (!ok) return;
+    state.nights = state.nights.filter((n) => !n.demo);
+    Object.assign(state.settings, { demoMode: false, onboarding: true, lastBackup: null, backupReminderDismissedAt: null, startedAt: new Date().toISOString() });
+    ui.obGoal = state.settings.sleepGoal;
+    ui.obBed = state.settings.targetBedtime;
+    ui.view = 'home';
+    ui.tlMonth = null;
+    persist();
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  async function eraseAll() {
+    for (;;) {
+      const r = await dialog({
+        title: 'Erase all data?',
+        body: 'This removes all nights, factors and settings from this browser. This can\u2019t be undone.',
+        buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Export backup first', value: 'export' }, { label: 'Erase everything', value: 'erase', kind: 'danger' }]
+      });
+      if (r === 'export') { exportJSON(); continue; } // download, then show the dialog again
+      if (r !== 'erase') return;
+      break;
+    }
+    try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
+    state = { nights: [], factors: DEFAULT_FACTORS.map((f) => Object.assign({}, f)), settings: Object.assign(defaultSettings(), { onboarding: true }) };
+    ui.obGoal = 480; ui.obBed = ''; ui.view = 'home'; ui.tlMonth = null;
+    persist();
+    render();
+    window.scrollTo(0, 0);
+    toast('All data erased.');
+  }
+
+  /* ===================================================================
+     FACTORS (Settings)
+     =================================================================== */
+  function factorNameError(name, exceptId) {
+    if (!name) return 'This field is required.';
+    if (state.factors.some((f) => f.id !== exceptId && f.name.toLowerCase() === name.toLowerCase())) return 'This name already exists.';
+    return '';
+  }
+  function addFactor() {
+    const input = $('#new-factor'), errEl = $('#ferr-new');
+    const name = input.value.trim().slice(0, FACTOR_NAME_MAX);
+    let err = state.factors.length >= MAX_FACTORS ? 'You can have up to 8 factors.' : factorNameError(name);
+    if (err) { errEl.textContent = err; input.classList.add('invalid'); input.focus(); return; }
+    state.factors.push({ id: uid('f'), name });
+    persist();
+    render();
+    const ni = $('#new-factor');
+    if (ni) ni.focus();
+    toast('Factor added.');
+  }
+  function renameFactor(input) {
+    const f = state.factors.find((x) => x.id === input.dataset.factorId);
+    if (!f) return;
+    const name = input.value.trim().slice(0, FACTOR_NAME_MAX);
+    const errEl = document.getElementById('ferr-' + f.id);
+    const err = factorNameError(name, f.id);
+    if (err) { if (errEl) errEl.textContent = err; input.classList.add('invalid'); return; }
+    if (errEl) errEl.textContent = '';
+    input.classList.remove('invalid');
+    if (name === f.name) return;
+    f.name = name;
+    persist();
+    toast('Factor renamed.');
+  }
+  async function deleteFactor(id) {
+    const f = state.factors.find((x) => x.id === id);
+    if (!f) return;
+    const used = state.nights.filter((n) => n.factors.includes(id)).length;
+    const ok = await dialog({
+      title: 'Delete \u201c' + f.name + '\u201d?',
+      body: used ? 'It will also be removed from ' + used + (used === 1 ? ' night' : ' nights') + ' where you used it. This can\u2019t be undone.' : 'It isn\u2019t used in any nights yet.',
+      buttons: [{ label: 'Cancel', value: false }, { label: 'Delete', value: true, kind: 'danger' }]
+    });
+    if (!ok) return;
+    state.factors = state.factors.filter((x) => x.id !== id);
+    state.nights.forEach((n) => { n.factors = n.factors.filter((x) => x !== id); });
+    persist();
+    render();
+    toast('Factor deleted.');
+  }
+
+  /* ===================================================================
+     EVENTS (delegated)
+     =================================================================== */
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (ui.moreOpen && !e.target.closest('#more-menu') && !(el && el.dataset.action === 'more')) closeMore();
+    if (!el) return;
+    const a = el.dataset.action;
+
+    // Settings toggles: data-action="set-<key>"
+    if (a.indexOf('set-') === 0) {
+      state.settings[a.slice(4)] = el.dataset.value;
+      persist();
+      render();
+      return;
+    }
+
+    switch (a) {
+      case 'go': go(el.dataset.view); break;
+      case 'more': ui.moreOpen ? closeMore() : openMore(); break;
+      case 'log': openLog(todayKey()); break;
+      case 'edit-night': openLog(el.dataset.date); break;
+      case 'close-sheet': closeSheet(); break;
+      case 'clear-demo': clearDemo(); break;
+      case 'erase-all': eraseAll(); break;
+      case 'export': exportJSON(); break;
+      case 'import': { const fi = $('#import-file'); fi.value = ''; fi.click(); break; }
+      case 'dismiss-reminder':
+        state.settings.backupReminderDismissedAt = new Date().toISOString();
+        persist(); render(); break;
+      case 'trends-period': ui.trendsPeriod = Number(el.dataset.value); render(); break;
+      case 'patterns-period': ui.patternsPeriod = Number(el.dataset.value); render(); break;
+      case 'tl-prev': case 'tl-next': {
+        const [y, m] = ui.tlMonth.split('-').map(Number);
+        const d = new Date(y, m - 1 + (a === 'tl-next' ? 1 : -1), 1);
+        ui.tlMonth = d.getFullYear() + '-' + pad(d.getMonth() + 1);
+        render(); break;
+      }
+      case 'goal-dec': case 'goal-inc': {
+        const delta = a === 'goal-inc' ? GOAL_STEP : -GOAL_STEP;
+        if (el.dataset.scope === 'ob') {
+          ui.obBed = ($('#ob-bed') || {}).value || '';
+          ui.obGoal = clamp(ui.obGoal + delta, GOAL_MIN, GOAL_MAX);
+        } else {
+          state.settings.sleepGoal = clamp(state.settings.sleepGoal + delta, GOAL_MIN, GOAL_MAX);
+          persist();
+        }
+        render(); break;
+      }
+      case 'clear-target': state.settings.targetBedtime = ''; persist(); render(); break;
+      case 'ob-start': {
+        const bed = ($('#ob-bed') || {}).value || '';
+        Object.assign(state.settings, { sleepGoal: ui.obGoal, targetBedtime: TIME_RE.test(bed) ? bed : '', onboarding: false, startedAt: new Date().toISOString() });
+        persist();
+        ui.view = 'home';
+        render();
+        window.scrollTo(0, 0);
+        break;
+      }
+      case 'factor-add': addFactor(); break;
+      case 'factor-delete': deleteFactor(el.dataset.id); break;
+
+      /* --- Log Sleep sheet --- */
+      case 'toggle-date':
+        sheet.showDate = !sheet.showDate;
+        $('#date-field').hidden = !sheet.showDate;
+        el.setAttribute('aria-expanded', String(sheet.showDate));
+        break;
+      case 'quality':
+        sheet.quality = Number(el.dataset.q);
+        document.querySelectorAll('.qbtn').forEach((b) => { const on = Number(b.dataset.q) === sheet.quality; b.classList.toggle('on', on); b.setAttribute('aria-checked', String(on)); });
+        setErr('q', '');
+        break;
+      case 'toggle-details':
+        sheet.detailsOpen = !sheet.detailsOpen;
+        $('#details').hidden = !sheet.detailsOpen;
+        el.setAttribute('aria-expanded', String(sheet.detailsOpen));
+        break;
+      case 'chip': {
+        const id = el.dataset.id;
+        if (sheet.factors.has(id)) sheet.factors.delete(id); else sheet.factors.add(id);
+        el.classList.toggle('on', sheet.factors.has(id));
+        el.setAttribute('aria-pressed', String(sheet.factors.has(id)));
+        updateDetailsCount();
+        break;
+      }
+      case 'awoken-inc': sheet.awoken = Math.min(AWOKEN_MAX, (sheet.awoken || 0) + 1); updateAwoken(); updateDetailsCount(); break;
+      case 'awoken-dec': sheet.awoken = Math.max(0, (sheet.awoken || 0) - 1); updateAwoken(); updateDetailsCount(); break;
+      case 'save-night': saveNight(); break;
+      case 'delete-night': deleteNight(); break;
+    }
+  });
+
+  document.addEventListener('input', (e) => {
+    const id = e.target.id;
+    if (sheet) {
+      if (id === 'f-bed' || id === 'f-wake') {
+        sheet[id === 'f-bed' ? 'bed' : 'wake'] = e.target.value;
+        setErr(id === 'f-bed' ? 'bed' : 'wake', '');
+        setErr('same', '');
+        updateDuration();
+      } else if (id === 'f-note') {
+        sheet.note = e.target.value;
+        updateDetailsCount();
+      }
+    }
+    if (id === 'new-factor') { $('#ferr-new').textContent = ''; e.target.classList.remove('invalid'); }
+  });
+
+  document.addEventListener('change', (e) => {
+    const t = e.target, id = t.id;
+    if (sheet && (id === 'f-bed' || id === 'f-wake')) {
+      sheet[id === 'f-bed' ? 'bed' : 'wake'] = t.value;
+      updateDuration();
+    } else if (sheet && id === 'f-date') {
+      const v = t.value;
+      setErr('date', '');
+      if (!v) { sheet.date = ''; $('#night-of').textContent = nightOfText(); return; }
+      if (v > todayKey()) { sheet.date = v; setErr('date', "You can't log a future date."); $('#night-of').textContent = nightOfText(); return; }
+      const ex = nightByDate(v);
+      if (ex && ex.id !== sheet.editingId) {
+        // A night already exists on that date: open it instead of creating a duplicate
+        openLog(v, true);
+        toast('That night is already logged. Opened it for editing.');
+        return;
+      }
+      sheet.date = v;
+      $('#night-of').textContent = nightOfText();
+    } else if (id === 'set-target') {
+      state.settings.targetBedtime = TIME_RE.test(t.value) ? t.value : '';
+      persist();
+      render();
+    } else if (t.dataset && t.dataset.factorId) {
+      renameFactor(t);
+    } else if (id === 'import-file' && t.files && t.files[0]) {
+      importFile(t.files[0]);
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (sheet) closeSheet();
+      else closeMore();
+    }
+    if (e.key === 'Enter' && e.target.id === 'new-factor') { e.preventDefault(); addFactor(); }
+    if (e.key === 'Enter' && e.target.dataset && e.target.dataset.factorId) { e.preventDefault(); e.target.blur(); }
+  });
+
+  // Redraw charts at the new width when the window is resized
+  let resizeTimer = null;
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(drawCharts, 150); });
+
+  /* ===================================================================
+     START
+     =================================================================== */
+  document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = ICON[el.dataset.icon] || ''; });
+  state = loadState();
+  ui.obGoal = state.settings.sleepGoal;
+  ui.obBed = state.settings.targetBedtime;
+  persist();
+  render();
+})();
+</script>
+</body>
+</html>
